@@ -144,6 +144,8 @@ export function SessionList() {
         </div>
         <div className={styles.searchBox}>
           <input
+            id="session-search"
+            name="session-search"
             className={styles.searchInput}
             placeholder="搜索会话..."
             value={search}
@@ -152,6 +154,7 @@ export function SessionList() {
               if (!e.target.value.trim()) loadSessions();
             }}
             onKeyDown={(e) => { if (e.key === "Enter") handleSearch(search); }}
+            aria-label="搜索会话"
           />
         </div>
         <div className={styles.list}>
@@ -169,10 +172,13 @@ export function SessionList() {
             >
               {editingId === s.id ? (
                 <input
+                  id={`rename-session-${s.id}`}
+                  name={`rename-session-${s.id}`}
                   className={styles.inlineEdit}
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   onBlur={() => handleRenameSubmit(s.id)}
+                  aria-label="重命名会话"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleRenameSubmit(s.id);
                     if (e.key === "Escape") setEditingId(null);

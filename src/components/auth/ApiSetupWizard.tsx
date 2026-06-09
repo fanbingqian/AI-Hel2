@@ -252,12 +252,14 @@ export function ApiSetupWizard() {
                     <span className={styles.provModel}>{prov.defaultModel}</span>
                     <input
                       id={`key-input-${prov.id}`}
+                      name={`api-key-${prov.id}`}
                       className={styles.keyInput}
                       type="password"
                       placeholder="粘贴 API Key..."
                       value={keys[prov.id] || ""}
                       onChange={(e) => handleKeyChange(prov.id, e.target.value)}
                       onFocus={() => setActiveProvider(prov.id)}
+                      aria-label={`${prov.name} API Key`}
                     />
                     <span className={`${styles.provStatus} ${hasKey ? styles.done : ""}`}>
                       {hasKey ? "已配置" : "未配置"}
@@ -390,6 +392,8 @@ function AgentCard({
           </div>
           <div className={styles.addModelRow}>
             <input
+              id={`add-model-${agent.id}`}
+              name={`add-model-${agent.id}`}
               className={styles.addModelInput}
               placeholder="添加模型名称..."
               value={newModel}
@@ -397,6 +401,7 @@ function AgentCard({
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAdd();
               }}
+              aria-label={`为 ${agent.name} 添加模型`}
             />
             <button type="button" className={styles.addModelBtn} onClick={handleAdd}>
               + 添加

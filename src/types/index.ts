@@ -1,6 +1,6 @@
 // ── Shared types ──
 
-export type PageId = "sphere" | "knowledge" | "canvas" | "settings" | "aiword";
+export type PageId = "aihel" | "aiword" | "settings";
 export type AuthStage = "splash" | "login" | "register" | "api_setup" | "done";
 
 // ── Chat ──

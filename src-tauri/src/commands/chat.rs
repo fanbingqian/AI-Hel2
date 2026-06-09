@@ -178,11 +178,20 @@ async fn run_hermes_chat(
 ) -> Result<(), String> {
     state.cancel_flag.store(false, Ordering::SeqCst);
 
+    // Notify pill: agent started working
+    let _ = app.emit("agent:status", serde_json::json!({
+        "working": true,
+        "message": "正在思考…",
+        "elapsed": 0,
+        "steps": []
+    }));
+
     let resp = state
         .agent
         .chat_completions(messages.clone(), model, session_id.as_deref())
         .await
         .map_err(|e| {
+            let _ = app.emit("agent:status", serde_json::json!({ "working": false }));
             let _ = app.emit("chat:error", StreamError { message: e.clone(), retryable: true });
             e
         })?;
@@ -262,6 +271,8 @@ async fn run_hermes_chat(
         }
     }
 
+    // Notify pill: agent finished
+    let _ = app.emit("agent:status", serde_json::json!({ "working": false }));
     Ok(())
 }
 

@@ -7,7 +7,9 @@ import styles from "./EntityBrowser.module.css";
 
 type DetailMode = "view" | "edit";
 
-export function EntityBrowser() {
+interface Props { compact?: boolean; detailOnly?: boolean; }
+
+export function EntityBrowser({ compact, detailOnly }: Props = {}) {
   const entities = useKnowledgeStore((s) => s.entities);
   const relations = useKnowledgeStore((s) => s.relations);
   const selectEntity = useKnowledgeStore((s) => s.selectEntity);
@@ -138,13 +140,16 @@ export function EntityBrowser() {
   const outbound = selectedEntityDetail?.outbound_relations ?? [];
 
   return (
-    <div className={styles.browser}>
-      {/* Sidebar */}
-      <div className={styles.sidebar}>
+    <div className={`${styles.browser} ${compact ? styles.compact : ""} ${detailOnly ? styles.detailOnly : ""}`}>
+      {/* Sidebar — hidden in detailOnly mode */}
+      {!detailOnly && <div className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <input
+            id="entity-search"
+            name="entity-search"
             className={styles.search}
             placeholder="搜索实体..."
+            aria-label="搜索实体"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -238,18 +243,21 @@ export function EntityBrowser() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
-      {/* Detail Panel */}
-      <div className={styles.detail}>
+      {/* Detail Panel — always visible except compact mode */}
+      {!compact && (<div className={styles.detail}>
         {entity ? (
           <>
             <div className={styles.detailHeader}>
               {detailMode === "edit" ? (
                 <input
+                  id="entity-edit-name"
+                  name="entity-name"
                   className={styles.editName}
                   value={editing.name || ""}
                   onChange={(e) => setEditing((p) => ({ ...p, name: e.target.value }))}
+                  aria-label="实体名称"
                 />
               ) : (
                 <h3 className={styles.name}>{entity.name}</h3>
@@ -279,15 +287,15 @@ export function EntityBrowser() {
                 </label>
                 <label className={styles.field}>
                   命名空间
-                  <input value={editing.namespace || ""} onChange={(e) => setEditing((p) => ({ ...p, namespace: e.target.value }))} />
+                  <input id="entity-edit-namespace" name="entity-namespace" value={editing.namespace || ""} onChange={(e) => setEditing((p) => ({ ...p, namespace: e.target.value }))} />
                 </label>
                 <label className={styles.field}>
                   描述
-                  <textarea value={editing.description || ""} onChange={(e) => setEditing((p) => ({ ...p, description: e.target.value }))} rows={3} />
+                  <textarea id="entity-edit-desc" name="entity-description" value={editing.description || ""} onChange={(e) => setEditing((p) => ({ ...p, description: e.target.value }))} rows={3} />
                 </label>
                 <label className={styles.field}>
                   置信度 (0-1)
-                  <input type="number" min="0" max="1" step="0.05" value={editing.confidence || "0"} onChange={(e) => setEditing((p) => ({ ...p, confidence: e.target.value }))} />
+                  <input id="entity-edit-confidence" name="entity-confidence" type="number" min="0" max="1" step="0.05" value={editing.confidence || "0"} onChange={(e) => setEditing((p) => ({ ...p, confidence: e.target.value }))} />
                 </label>
               </div>
             ) : (
@@ -350,8 +358,11 @@ export function EntityBrowser() {
             {/* Add relation */}
             <div className={styles.addRelRow}>
               <input
+                id="add-relation-target"
+                name="add-relation-target"
                 className={styles.addRelInput}
                 placeholder="目标实体 ID"
+                aria-label="目标实体 ID"
                 value={newRelation.toId}
                 onChange={(e) => setNewRelation((p) => ({ ...p, toId: e.target.value }))}
               />
@@ -383,7 +394,7 @@ export function EntityBrowser() {
             )}
 
             {detailMode === "view" && (
-              <button className={styles.locateBtn} onClick={() => setActivePage("sphere")}>
+              <button className={styles.locateBtn} onClick={() => setActivePage("aihel")}>
                 在球体中定位
               </button>
             )}
@@ -392,6 +403,7 @@ export function EntityBrowser() {
           <div className={styles.empty}>选择一个实体查看详情</div>
         )}
       </div>
+      )}
     </div>
   );
 }

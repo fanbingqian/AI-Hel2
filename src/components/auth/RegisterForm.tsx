@@ -54,8 +54,10 @@ export function RegisterForm({ onSwitchToLogin }: Props) {
         <div className={styles.logo}>AI-<span>Hel2</span></div>
         <form onSubmit={handleSubmit}>
           <div className={styles.field}>
-            <label>用户名</label>
+            <label htmlFor="reg-username">用户名</label>
             <input
+              id="reg-username"
+              name="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -64,8 +66,10 @@ export function RegisterForm({ onSwitchToLogin }: Props) {
             />
           </div>
           <div className={styles.field}>
-            <label>邮箱</label>
+            <label htmlFor="reg-email">邮箱</label>
             <input
+              id="reg-email"
+              name="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -73,21 +77,27 @@ export function RegisterForm({ onSwitchToLogin }: Props) {
             />
           </div>
           <div className={styles.field}>
-            <label>密码</label>
+            <label htmlFor="reg-password">密码</label>
             <input
+              id="reg-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="至少6位密码"
+              autoComplete="new-password"
             />
           </div>
           <div className={styles.field}>
-            <label>确认密码</label>
+            <label htmlFor="reg-confirm">确认密码</label>
             <input
+              id="reg-confirm"
+              name="confirmPassword"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="再次输入密码"
+              autoComplete="new-password"
             />
           </div>
           {error && <div className={styles.error}>{error}</div>}

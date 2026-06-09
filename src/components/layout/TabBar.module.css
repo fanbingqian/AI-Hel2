@@ -43,6 +43,10 @@
   -webkit-app-region: no-drag;
 }
 
+.rightCompact {
+  gap: 4px;
+}
+
 .userBadge {
   display: flex;
   align-items: center;
@@ -247,7 +251,33 @@
   border-color: #07c160;
 }
 
+.tabAgentSelectCompact {
+  max-width: 90px;
+  font-size: 10px;
+  padding: 2px 4px;
+}
+
 .tabAgentSelect option {
   background: #2F2F2F;
   color: #e6e6e6;
+}
+
+.collapseBtn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: #808080;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  -webkit-app-region: no-drag;
+  transition: color 0.15s;
+}
+
+.collapseBtn:hover {
+  color: #07c160;
 }

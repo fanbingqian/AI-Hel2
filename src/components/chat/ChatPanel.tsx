@@ -20,6 +20,7 @@ const SPEAKERS: { id: number; name: string; gender: string }[] = [
 
 export function ChatPanel() {
   const chatPanelWidth = useUIStore((s) => s.chatPanelWidth);
+  const panelCollapsed = useUIStore((s) => s.panelCollapsed);
   const messages = useChatStore((s) => s.messages);
   const isLoading = useChatStore((s) => s.isLoading);
   const error = useChatStore((s) => s.error);
@@ -152,7 +153,7 @@ export function ChatPanel() {
   const isVoiceActive = voiceStatus !== "idle";
 
   return (
-    <div className={styles.panel} style={{ width: chatPanelWidth, minWidth: chatPanelWidth }}>
+    <div className={styles.panel} style={panelCollapsed ? { width: "100%", minWidth: 0 } : { width: chatPanelWidth, minWidth: chatPanelWidth }}>
       <div className={styles.messages}>
         {error && (
           <div className={styles.errorBanner}>
@@ -179,12 +180,15 @@ export function ChatPanel() {
         ) : (
           <textarea
             ref={textareaRef}
+            id="chat-input"
+            name="message"
             className={styles.textInput}
             placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
+            aria-label="输入消息"
           />
         )}
         <div className={styles.inputFoot}>

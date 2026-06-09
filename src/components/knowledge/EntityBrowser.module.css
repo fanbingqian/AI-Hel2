@@ -2,6 +2,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 .sidebar {
@@ -12,6 +13,23 @@
   display: flex;
   flex-direction: column;
   background: #2F2F2F;
+}
+
+/* Compact mode: sidebar fills parent */
+.compact {
+  width: 100%;
+  height: 100%;
+}
+.compact .sidebar {
+  width: 100%;
+  flex: 1;
+  border-right: none;
+}
+
+/* DetailOnly mode: no sidebar, detail fills parent */
+.detailOnly .detail {
+  flex: 1;
+  padding: 20px 24px;
 }
 
 .sidebarHeader {

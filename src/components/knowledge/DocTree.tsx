@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Plus, Trash2, FolderPlus, Pencil, MoveRight, ExternalLink } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Plus, Trash2, FolderPlus, Pencil, MoveRight, ExternalLink, Upload, FilePlus, Palette } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import * as wikiService from "../../services/wiki";
 import type { FileNode } from "../../types/wiki";
@@ -370,28 +370,63 @@ export function DocTree({ onFileOpen, onCanvasOpen, onUploadClick, onRename, ref
     }
   };
 
+  const handleNewCanvas = async () => {
+    const raw = prompt("画板名:");
+    if (raw) {
+      try {
+        const name = /\.\w+$/.test(raw) ? raw : `${raw}.canvas`;
+        await wikiService.createWikiItem("", name, "file");
+        loadTree();
+      } catch (e) {
+        console.error("创建画板失败:", e);
+        alert(`创建失败: ${e}`);
+      }
+    }
+  };
+
+  const handleCreateRootFolder = async () => {
+    const name = prompt("文件夹名:");
+    if (name) {
+      try {
+        await wikiService.createWikiItem("", name, "folder");
+        loadTree();
+      } catch (e) {
+        alert(`创建失败: ${e}`);
+      }
+    }
+  };
+
   const trimmed = search.trim();
   const filteredTree = trimmed ? filterTree(tree, trimmed) : tree;
 
   return (
     <div className={styles.tree} ref={treeRef}>
-      <div className={styles.header}>
-        <div className={styles.searchBox}>
-          <input
-            className={styles.searchInput}
-            placeholder="搜索文档..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <button className={styles.newBtn} onClick={handleNewFile}>
-          <Plus size={12} /> 新建
-        </button>
+      <div className={styles.searchBox}>
+        <input
+          id="doctree-search"
+          name="doctree-search"
+          className={styles.searchInput}
+          placeholder="搜索文档..."
+          aria-label="搜索文档"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      <div className={styles.toolbar}>
         {onUploadClick && (
-          <button className={styles.uploadBtn} onClick={onUploadClick} title="上传文件">
-            <Plus size={12} /> 上传
+          <button type="button" className={styles.toolBtn} onClick={onUploadClick} title="上传文件">
+            <Upload size={14} />
           </button>
         )}
+        <button type="button" className={styles.toolBtn} onClick={handleCreateRootFolder} title="新建文件夹">
+          <FolderPlus size={14} />
+        </button>
+        <button type="button" className={styles.toolBtn} onClick={handleNewFile} title="新建文档">
+          <FilePlus size={14} />
+        </button>
+        <button type="button" className={styles.toolBtn} onClick={handleNewCanvas} title="新建画板">
+          <Palette size={14} />
+        </button>
       </div>
       <div className={styles.treeContent}>
         {filteredTree.map((node) => (

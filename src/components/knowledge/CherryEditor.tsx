@@ -314,40 +314,46 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         className={styles.host}
       />
       <div className={styles.statusBar}>
-        <span className={styles.filePath} title={filePath ?? undefined}>
-          {fileName ?? "未选择文件"}
-        </span>
-        <span className={styles.statusRight}>
-          {dirty && <span className={styles.dirtyDot}>● 已修改</span>}
-          <button
-            type="button"
-            className={styles.modeBtn}
-            title={`切换到${modeLabel[nextMode[mode]]}模式`}
-            onClick={() => handleModeSwitch(nextMode[mode])}
-          >
-            {modeLabel[mode]}
-          </button>
-          <button
-            type="button"
-            className={styles.themeBtn}
-            title={`切换到${theme === "dark" ? "亮色" : "暗色"}主题`}
-            onClick={() => {
-              const t = theme === "dark" ? "light" : "dark";
-              setThemeState(t);
-              cherryRef.current?.setTheme(t);
-            }}
-          >
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
-          <button
-            type="button"
-            disabled={!dirty}
-            className={styles.saveBtn}
-            onClick={handleSave}
-          >
-            保存
-          </button>
-        </span>
+        <div className={styles.statusRow}>
+          <span className={styles.filePath} title={filePath ?? undefined}>
+            {fileName ?? "未选择文件"}
+          </span>
+          <span className={styles.statusRight}>
+            <button
+              type="button"
+              className={styles.modeBtn}
+              title={`切换到${modeLabel[nextMode[mode]]}模式`}
+              onClick={() => handleModeSwitch(nextMode[mode])}
+            >
+              {modeLabel[mode]}
+            </button>
+            <button
+              type="button"
+              className={styles.themeBtn}
+              title={`切换到${theme === "dark" ? "亮色" : "暗色"}主题`}
+              onClick={() => {
+                const t = theme === "dark" ? "light" : "dark";
+                setThemeState(t);
+                cherryRef.current?.setTheme(t);
+              }}
+            >
+              {theme === "dark" ? "☀" : "☾"}
+            </button>
+            <button
+              type="button"
+              disabled={!dirty}
+              className={styles.saveBtn}
+              onClick={handleSave}
+            >
+              保存
+            </button>
+          </span>
+        </div>
+        {dirty && (
+          <div className={`${styles.statusRow} ${styles.dirtyRow}`}>
+            <span className={styles.dirtyDot}>● 已修改</span>
+          </div>
+        )}
       </div>
     </div>
   );

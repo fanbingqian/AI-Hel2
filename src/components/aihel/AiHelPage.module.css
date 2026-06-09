@@ -1,0 +1,101 @@
+.container {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  background: #1A1A1A;
+}
+
+/* ── DocTree column ── */
+.docTreeCol {
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1A1A1A;
+  border-right: 1px solid #2A2A2A;
+  overflow: hidden;
+}
+
+.docTabs {
+  display: flex;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.docTab {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: #808080;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.docTab:hover {
+  color: #b3b3b3;
+}
+
+.docTabActive {
+  color: #07c160;
+  border-bottom-color: #07c160;
+}
+
+/* ── Main Content column ── */
+.mainCol {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.mainInner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Chat column ── */
+.chatCol {
+  flex-shrink: 0;
+  min-width: 220px;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Close file button (editor mode) ── */
+.closeFileBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #3A3A3A;
+  background: #2C2C2C;
+  color: #808080;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 16px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.closeFileBtn:hover {
+  color: #e74c3c;
+  background: #3A3A3A;
+}

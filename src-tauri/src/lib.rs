@@ -186,6 +186,19 @@ pub fn run() {
         barge_in_child: std::sync::Mutex::new(None),
     };
 
+    #[tauri::command]
+    fn toggle_main_window(app: tauri::AppHandle) {
+        if let Some(window) = app.get_webview_window("main") {
+            if window.is_visible().unwrap_or(false) {
+                let _ = window.hide();
+            } else {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -204,6 +217,77 @@ pub fn run() {
         .manage(gateway_setup_service)
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // System tray
+            use tauri::tray::TrayIconBuilder;
+            use tauri::menu::{MenuBuilder, MenuItemBuilder};
+
+            let toggle_item = MenuItemBuilder::with_id("toggle", "显示/隐藏 AI-Hel2")
+                .build(app)
+                .unwrap_or_else(|_| panic!("Failed to create tray toggle item"));
+            let exit_item = MenuItemBuilder::with_id("exit", "退出")
+                .build(app)
+                .unwrap_or_else(|_| panic!("Failed to create tray exit item"));
+            let tray_menu = MenuBuilder::new(app)
+                .item(&toggle_item)
+                .separator()
+                .item(&exit_item)
+                .build()
+                .unwrap_or_else(|_| panic!("Failed to create tray menu"));
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().unwrap())
+                .tooltip("AI-Hel2")
+                .menu(&tray_menu)
+                .on_menu_event(move |app, event| {
+                    match event.id().as_ref() {
+                        "toggle" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "exit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app);
+
+            // Pill window (平刘海) — top-center floating bar
+            {
+                let pill = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "pill",
+                    tauri::WebviewUrl::App("index.html?window=pill".into()),
+                )
+                .title("AI-Hel2 Pill")
+                .inner_size(290.0, 52.0)
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .visible(true)
+                .build();
+
+                if let Ok(pill) = pill {
+                    if let Ok(Some(monitor)) = pill.primary_monitor() {
+                        let w = 290.0;
+                        let x = ((monitor.size().width as f64 - w) / 2.0) as i32;
+                        let _ = pill.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition { x, y: 38 },
+                        ));
+                    }
+                }
+
+            }
 
             // Initial wiki scan — indexes existing markdown files on startup.
             // The file watcher only catches changes after startup, so this
@@ -412,6 +496,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Window / Pill
+            toggle_main_window,
             // Chat
             commands::chat::chat_completions,
             commands::chat::abort_chat,

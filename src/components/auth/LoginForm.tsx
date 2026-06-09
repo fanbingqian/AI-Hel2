@@ -42,8 +42,10 @@ export function LoginForm({ onSwitchToRegister }: Props) {
         <div className={styles.logo}>AI-<span>Hel2</span></div>
         <form onSubmit={handleSubmit}>
           <div className={styles.field}>
-            <label>用户名</label>
+            <label htmlFor="login-username">用户名</label>
             <input
+              id="login-username"
+              name="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -52,8 +54,10 @@ export function LoginForm({ onSwitchToRegister }: Props) {
             />
           </div>
           <div className={styles.field}>
-            <label>密码</label>
+            <label htmlFor="login-password">密码</label>
             <input
+              id="login-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

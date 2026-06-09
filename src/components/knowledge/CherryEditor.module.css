@@ -13,6 +13,7 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 /* ── Remove focus transparent overlay box ── */
@@ -142,14 +143,19 @@
 /* ── Status bar ── */
 .statusBar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
+  flex-direction: column;
+  padding: 2px 12px;
   background: #2C2C2C;
   border-top: 1px solid #3A3A3A;
   flex-shrink: 0;
   font-size: 11px;
   color: #808080;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   line-height: 22px;
 }
 
@@ -161,6 +167,7 @@
 }
 
 .statusRight { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.dirtyRow { justify-content: flex-end; }
 .dirtyDot { color: #f59e0b; font-size: 10px; }
 
 .saveBtn {
