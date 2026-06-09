@@ -1,0 +1,222 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid #3A3A3A;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: #808080;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.tab:hover {
+  color: #b3b3b3;
+}
+
+.tab.activeTab {
+  color: #07c160;
+  background: rgba(7, 193, 96, 0.12);
+  font-weight: 600;
+}
+
+.topActions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.syncBtn {
+  padding: 3px 10px;
+  background: rgba(7, 193, 96, 0.1);
+  border: 1px solid rgba(7, 193, 96, 0.25);
+  border-radius: 6px;
+  color: #07c160;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.syncBtn:hover {
+  background: rgba(7, 193, 96, 0.18);
+}
+
+.uploadBtn {
+  padding: 3px 10px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 6px;
+  color: #3b82f6;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.uploadBtn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.uploadBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.uploadToast {
+  padding: 6px 12px;
+  background: rgba(7, 193, 96, 0.1);
+  border-bottom: 1px solid rgba(7, 193, 96, 0.2);
+  color: #07c160;
+  font-size: 11px;
+  text-align: center;
+}
+
+.toastError {
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+.docsLayout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.resizeHandle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: #3A3A3A;
+  transition: background 0.15s;
+}
+.resizeHandle:hover,
+.resizeHandle:active {
+  background: #4a7cf7;
+}
+
+/* Drag-and-drop overlay */
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.dropBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 60px;
+  border: 2px dashed rgba(7, 193, 96, 0.4);
+  border-radius: 16px;
+  background: rgba(7, 193, 96, 0.06);
+}
+
+.dropIcon {
+  font-size: 36px;
+  color: #07c160;
+  line-height: 1;
+}
+
+.dropText {
+  font-size: 16px;
+  color: #e6e6e6;
+  font-weight: 600;
+}
+
+.dropSub {
+  font-size: 12px;
+  color: #808080;
+}
+
+/* File card for non-editable file types (images, Office docs, etc.) */
+
+.fileCard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px;
+  color: #808080;
+}
+
+.fileCardIcon {
+  font-size: 48px;
+  line-height: 1;
+}
+
+.fileCardName {
+  font-size: 14px;
+  color: #e6e6e6;
+  font-weight: 500;
+  word-break: break-all;
+  text-align: center;
+}
+
+.fileCardType {
+  font-size: 11px;
+  color: #808080;
+}
+
+.fileCardBtn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  background: #2F2F2F;
+  border: 1px solid #3A3A3A;
+  border-radius: 6px;
+  color: #b3b3b3;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.fileCardBtn:hover {
+  background: #3A3A3A;
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #808080;
+  font-size: 13px;
+}

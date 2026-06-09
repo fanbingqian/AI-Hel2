@@ -1,0 +1,1321 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-Hel2 全部页面设计</title>
+<style>
+:root {
+  --bg-primary: #1A1A1A;
+  --bg-secondary: #2F2F2F;
+  --bg-hover: #3A3A3A;
+  --bg-surface: #2C2C2C;
+  --text-primary: #e6e6e6;
+  --text-secondary: #b3b3b3;
+  --text-muted: #808080;
+  --accent: #07c160;
+  --accent-hover: #06ad56;
+  --border: #3A3A3A;
+  --border-light: #333333;
+  --danger: #fa5151;
+  /* 3D sphere colors */
+  --sphere-dark: #0a1a0a;
+  --sphere-mid: #0d2f0d;
+  --node-green: #6ee7b7;
+  --node-gold: #f0c040;
+  --edge-green: rgba(100,200,150,0.35);
+  --particle-green: rgba(150,255,200,0.8);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: Microsoft YaHei, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  background: #111; color: var(--text-primary);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px; gap: 28px; min-height: 100vh;
+}
+
+/* AI-Hel WeChat-style scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.45); }
+
+h1 { font-size: 15px; font-weight: 600; color: var(--text-secondary); margin-bottom: 2px; }
+
+.mockup {
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* TabBar */
+.tabBar { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:var(--bg-secondary); padding:0 12px; height:40px; flex-shrink:0; }
+.tab { padding:10px 20px; border:none; background:transparent; color:var(--text-muted); font-size:13px; cursor:pointer; border-bottom:2px solid transparent; font-family:inherit; transition:color 0.15s; }
+.tab:hover { color:var(--text-primary); }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.settingsBtn { padding:6px 10px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; display:flex; align-items:center; }
+
+.label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+.desc { font-size:11px; color:var(--text-muted); margin-top:4px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:500; }
+.badgeGreen { background:rgba(7,193,96,0.12); color:var(--accent); }
+.badgeGray { background:rgba(255,255,255,0.06); color:var(--text-muted); }
+
+.btnSm { padding:3px 10px; border-radius:4px; font-size:10px; cursor:pointer; font-family:inherit; }
+.btnPrimarySm { background:rgba(7,193,96,0.1); border:1px solid rgba(7,193,96,0.25); border-radius:6px; color:var(--accent); font-size:10px; cursor:pointer; padding:3px 10px; font-family:inherit; transition:background 0.15s; }
+.btnPrimarySm:hover { background:rgba(7,193,96,0.18); }
+.btnDangerSm { background:rgba(250,81,81,0.1); border:1px solid rgba(250,81,81,0.25); border-radius:4px; color:var(--danger); font-size:10px; cursor:pointer; padding:3px 10px; font-family:inherit; }
+
+/* AI-Hel tree icons */
+.treeItem { padding:4px 8px; cursor:pointer; display:flex; align-items:center; gap:4px; font-size:11px; white-space:nowrap; }
+.treeItem:hover { background:rgba(255,255,255,0.04); }
+.treeItem.active { color:var(--accent); background:rgba(7,193,96,0.06); border-radius:3px; }
+.treeArrow { font-size:8px; color:var(--text-muted); width:12px; text-align:center; flex-shrink:0; }
+.treeIcon { opacity:0.7; font-size:12px; flex-shrink:0; }
+.treeName { color:inherit; overflow:hidden; text-overflow:ellipsis; }
+
+.caption { text-align:center; color:var(--text-muted); font-size:11px; margin-top:6px; max-width:960px; line-height:1.5; }
+
+/* Session list collapse */
+.sessionList { transition: width 0.25s ease; overflow:hidden; }
+.sessionList.expanded { width:210px; }
+.sessionList.collapsed { width:36px; }
+.sessionList.collapsed .sessionContent { display:none; }
+.toggleSessionBtn {
+  width:28px; height:28px; border:1px solid var(--border); border-radius:4px;
+  background:transparent; color:var(--text-muted); cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; flex-shrink:0; transition: color 0.15s;
+}
+.toggleSessionBtn:hover { color:var(--text-primary); }
+
+/* 3D Sphere area */
+.sphereCanvas {
+  flex:1; display:flex; align-items:center; justify-content:center; position:relative;
+  background: radial-gradient(ellipse at center, #0d2818 0%, #0a150a 40%, #060e06 100%);
+  overflow:hidden;
+}
+
+/* Sphere glow pulse */
+@keyframes spherePulse {
+  0%,100% { opacity:0.5; }
+  50% { opacity:0.8; }
+}
+@keyframes nodeGlow {
+  0%,100% { box-shadow: 0 0 6px rgba(110,231,183,0.5); }
+  50% { box-shadow: 0 0 14px rgba(110,231,183,0.9); }
+}
+@keyframes nodeGlowWhite {
+  0%,100% { box-shadow: 0 0 6px rgba(120,130,150,0.45); }
+  50% { box-shadow: 0 0 14px rgba(120,130,150,0.7); }
+}
+@keyframes goldPulse {
+  0%,100% { box-shadow: 0 0 10px rgba(200,210,220,0.7); }
+  50% { box-shadow: 0 0 20px rgba(220,230,240,1); }
+}
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 16px rgba(250,81,81,0.4); transform:scale(1); }
+  50% { box-shadow: 0 0 28px rgba(250,81,81,0.7); transform:scale(1.06); }
+}
+@keyframes particleDrift {
+  0% { transform: translate(0, 0); opacity:0; }
+  20% { opacity:0.7; }
+  80% { opacity:0.3; }
+  100% { transform: translate(var(--dx), var(--dy)); opacity:0; }
+}
+@keyframes particleFloat {
+  0%,100% { transform: translateY(0); opacity:0.4; }
+  50% { transform: translateY(-4px); opacity:0.8; }
+}
+
+.particle {
+  position:absolute; border-radius:50%;
+  background:var(--particle-green);
+  animation: particleFloat var(--dur) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+.edgeLine {
+  position:absolute; height:1px;
+  background:var(--edge-green);
+  transform-origin: left center;
+  pointer-events:none;
+}
+/* Context menu */
+.ctxMenu {
+  position:absolute; background:var(--bg-secondary); border:1px solid var(--border);
+  border-radius:6px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,0.5);
+  z-index:100; min-width:130px;
+}
+.ctxItem {
+  padding:5px 10px; font-size:11px; color:var(--text-secondary); cursor:pointer;
+  border-radius:3px; display:flex; align-items:center; gap:8px;
+}
+.ctxItem:hover { background:var(--bg-hover); color:var(--text-primary); }
+.ctxItem.danger { color:var(--danger); }
+.ctxItem.danger:hover { background:rgba(250,81,81,0.08); }
+.ctxSep { height:1px; background:var(--border-light); margin:3px 6px; }
+
+/* Panel resizer (AI-Hel style) */
+.panelResizer {
+  width: 5px;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+  flex-shrink: 0;
+  z-index: 10;
+}
+.panelResizer::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panelResizer:hover::after {
+  background: var(--border);
+}
+.panelResizer.dragging::after {
+  background: var(--accent);
+}
+
+/* Splash screen */
+.splash {
+  position: fixed; inset: 0; z-index: 9999;
+  background: #0d0d0d;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  transition: opacity 0.6s ease;
+}
+.splash.fadeOut { opacity: 0; pointer-events: none; }
+.splash video {
+  max-width: 70%; max-height: 60%;
+  border-radius: 12px;
+  box-shadow: 0 0 60px rgba(7,193,96,0.15);
+}
+.splash .skipBtn {
+  margin-top: 24px; padding: 8px 24px;
+  background: transparent; border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px; color: rgba(255,255,255,0.35);
+  font-size: 12px; cursor: pointer; font-family: inherit;
+  transition: all 0.2s;
+}
+.splash .skipBtn:hover { border-color: rgba(255,255,255,0.4); color: rgba(255,255,255,0.6); }
+
+/* Login overlay */
+.loginOverlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.5s ease;
+}
+.loginOverlay.hidden { opacity: 0; pointer-events: none; }
+.loginBox {
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 12px; padding: 40px 36px;
+  width: 380px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column; gap: 20px;
+}
+.loginBox .logo {
+  text-align: center; font-size: 24px; font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 2px;
+}
+.loginBox .logo span { color: var(--accent); }
+.loginBox .field { display: flex; flex-direction: column; gap: 6px; }
+.loginBox .field label {
+  font-size: 11px; color: var(--text-muted);
+}
+.loginBox .field input {
+  padding: 10px 12px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-primary); font-size: 13px; outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.loginBox .field input:focus { border-color: var(--accent); }
+.loginBox .loginBtn {
+  padding: 12px; background: var(--accent); border: none;
+  border-radius: 8px; color: #000; font-size: 14px;
+  font-weight: 600; cursor: pointer; font-family: inherit;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+.loginBox .loginBtn:hover { background: var(--accent-hover); }
+.loginBox .switchLink {
+  text-align: center; font-size: 11px; color: var(--text-muted);
+}
+.loginBox .switchLink a {
+  color: var(--accent); cursor: pointer; text-decoration: none;
+}
+.loginBox .switchLink a:hover { text-decoration: underline; }
+.loginBox .hint {
+  text-align: center; font-size: 10px; color: var(--text-muted);
+}
+#registerForm { display: none; }
+
+/* User badge in tabbar */
+.userBadge {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 4px 8px; border-radius: 6px; transition: background 0.15s;
+  position: relative;
+}
+.userBadge:hover { background: var(--bg-hover); }
+.userAvatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: #000;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
+}
+.userName { font-size: 11px; color: var(--text-secondary); }
+.userDropdown {
+  position: absolute; top: 100%; right: 0; margin-top: 6px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px; min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 50;
+  display: none;
+}
+.userDropdown.show { display: block; }
+.userDropdown .dropItem {
+  padding: 7px 12px; font-size: 11px; color: var(--text-secondary);
+  cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 8px;
+}
+.userDropdown .dropItem:hover { background: var(--bg-hover); color: var(--text-primary); }
+.userDropdown .dropSep { height: 1px; background: var(--border-light); margin: 3px 6px; }
+
+/* API Setup overlay */
+.apiSetupOverlay {
+  position: fixed; inset: 0; z-index: 9997;
+  background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.5s ease;
+}
+.apiSetupOverlay.hidden { opacity: 0; pointer-events: none; }
+.apiSetupBox {
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 12px; padding: 32px;
+  width: 600px; max-height: 85vh; overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+}
+.apiSetupBox .stepTitle {
+  font-size: 18px; font-weight: 700; color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.apiSetupBox .stepDesc {
+  font-size: 11px; color: var(--text-muted); margin-bottom: 18px; line-height: 1.5;
+}
+/* Provider list rows */
+.apiSetupBox .provList { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.apiSetupBox .provRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer; transition: all 0.15s;
+}
+.apiSetupBox .provRow:hover { border-color: var(--text-muted); }
+.apiSetupBox .provRow.active { border-color: var(--accent); background: rgba(7,193,96,0.05); }
+.apiSetupBox .provRow .provDot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.apiSetupBox .provRow .provName { font-size: 13px; color: var(--text-primary); font-weight: 500; width: 110px; flex-shrink: 0; }
+.apiSetupBox .provRow .provModel { font-size: 10px; color: var(--text-muted); width: 100px; flex-shrink: 0; }
+.apiSetupBox .provRow .keyInput {
+  flex: 1; padding: 6px 10px; background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-primary); font-size: 11px; outline: none;
+  font-family: inherit; min-width: 0;
+}
+.apiSetupBox .provRow .keyInput:focus { border-color: var(--accent); }
+.apiSetupBox .provRow .provStatus {
+  font-size: 10px; flex-shrink: 0; width: 56px; text-align: right;
+}
+.apiSetupBox .provRow .provStatus.done { color: var(--accent); }
+.apiSetupBox .btnRow { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
+.apiSetupBox .skipLink {
+  background: none; border: none; color: var(--text-muted); font-size: 11px;
+  cursor: pointer; font-family: inherit; text-decoration: none;
+}
+.apiSetupBox .skipLink:hover { color: var(--text-secondary); }
+.apiSetupBox .readyHint {
+  font-size: 10px; color: var(--text-muted); margin-top: 10px; text-align: center;
+}
+.apiSetupBox .readyHint span { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- ====== SPLASH SCREEN ====== -->
+<div id="splash" class="splash">
+  <video id="splashVideo" src="file:///D:/AI-Hel/qidongshipin.mp4" autoplay muted playsinline></video>
+  <button class="skipBtn" onclick="skipSplash()">跳过动画</button>
+</div>
+
+<!-- ====== LOGIN / REGISTER OVERLAY ====== -->
+<div id="loginOverlay" class="loginOverlay hidden">
+  <div class="loginBox">
+    <div class="logo">AI-<span>Hel2</span></div>
+
+    <!-- Login form -->
+    <form id="loginForm" onsubmit="doLogin(); return false;">
+      <div class="field">
+        <label>用户名</label>
+        <input type="text" id="loginUser" placeholder="输入用户名" value="admin">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="loginPass" placeholder="输入密码" value="password">
+      </div>
+      <button type="submit" class="loginBtn">登 录</button>
+    </form>
+
+    <!-- Register form (hidden by default) -->
+    <form id="registerForm" onsubmit="doRegister(); return false;">
+      <div class="field">
+        <label>用户名</label>
+        <input type="text" id="regUser" placeholder="设置用户名">
+      </div>
+      <div class="field">
+        <label>邮箱</label>
+        <input type="email" id="regEmail" placeholder="your@email.com">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="regPass" placeholder="至少6位密码">
+      </div>
+      <div class="field">
+        <label>确认密码</label>
+        <input type="password" id="regPass2" placeholder="再次输入密码">
+      </div>
+      <button type="submit" class="loginBtn">注 册</button>
+    </form>
+
+    <div class="switchLink" id="switchLink">
+      没有账号？<a onclick="showRegister()">立即注册</a>
+    </div>
+    <div class="hint">本地运行 · 数据安全</div>
+  </div>
+</div>
+
+<!-- ====== API SETUP OVERLAY (First-run wizard) ====== -->
+<div id="apiSetupOverlay" class="apiSetupOverlay hidden">
+  <div class="apiSetupBox">
+    <div class="stepTitle">配置大模型 API</div>
+    <div class="stepDesc">粘贴 API Key 即可开箱使用，与 Hermes Agent 直接对接。配置后同步到<b>系统设置 → 大模型配置</b>，可随时增删。</div>
+
+    <div class="provList" id="provList">
+      <!-- Anthropic -->
+      <div class="provRow" data-provider="anthropic" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#d47642;"></span>
+        <span class="provName">Anthropic</span>
+        <span class="provModel">Claude 系列</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="ANTHROPIC_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- OpenAI -->
+      <div class="provRow" data-provider="openai" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#74a69d;"></span>
+        <span class="provName">OpenAI</span>
+        <span class="provModel">GPT 系列</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="OPENAI_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- DeepSeek -->
+      <div class="provRow" data-provider="deepseek" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#537de9;"></span>
+        <span class="provName">DeepSeek</span>
+        <span class="provModel">V3 / R1</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="DEEPSEEK_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- Google AI -->
+      <div class="provRow" data-provider="google" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#4285f4;"></span>
+        <span class="provName">Google AI</span>
+        <span class="provModel">Gemini 系列</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="GOOGLE_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- xAI -->
+      <div class="provRow" data-provider="xai" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#e5e7eb;"></span>
+        <span class="provName">xAI</span>
+        <span class="provModel">Grok 系列</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="XAI_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- OpenRouter -->
+      <div class="provRow" data-provider="openrouter" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#a78bfa;"></span>
+        <span class="provName">OpenRouter</span>
+        <span class="provModel">多模型路由</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="OPENROUTER_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- Qwen -->
+      <div class="provRow" data-provider="qwen" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#6366f1;"></span>
+        <span class="provName">Qwen</span>
+        <span class="provModel">通义千问</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="QWEN_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- Groq -->
+      <div class="provRow" data-provider="groq" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#f97316;"></span>
+        <span class="provName">Groq</span>
+        <span class="provModel">超快推理</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="GROQ_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+      <!-- 自定义 -->
+      <div class="provRow" data-provider="custom" onclick="focusKeyInput(this)">
+        <span class="provDot" style="background:#9ca3af;"></span>
+        <span class="provName">自定义</span>
+        <span class="provModel">OpenAI 兼容</span>
+        <input class="keyInput" type="password" placeholder="粘贴 API Key..." onfocus="selectProvRow(this)" oninput="onKeyInput(this)" data-env="CUSTOM_API_KEY">
+        <span class="provStatus">未配置</span>
+      </div>
+    </div>
+
+    <div class="readyHint">已配置 <span id="readyCount">0</span> 个模型，Hermes Agent 开箱即用</div>
+
+    <div class="btnRow" style="margin-top:14px;">
+      <button class="skipLink" onclick="skipApiSetup()">跳过，稍后配置</button>
+      <button class="loginBtn" onclick="saveApiSetup()" style="margin-top:0;padding:10px 28px;font-size:13px;">开始使用</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 1: 知识编辑 - 文档编辑 Tab ====== -->
+<h1>页面2: 知识编辑 — 文档编辑 Tab（AI-Hel 同款文档树 + Milkdown 编辑器）</h1>
+<div class="mockup" style="width:960px; height:560px;">
+  <div class="tabBar">
+    <div style="display:flex;">
+      <button class="tab">对话球体</button>
+      <button class="tab active">知识编辑</button>
+      <button class="tab">画板</button>
+    </div>
+    <!-- User badge -->
+    <div class="userBadge" onclick="event.stopPropagation(); toggleUserDropdown(this);">
+      <div class="userAvatar userBadgeAvatar">?</div>
+      <span class="userName userBadgeName">未登录</span>
+      <div class="userDropdown">
+        <div class="dropItem">👤 个人信息</div>
+        <div class="dropItem">⚙ 系统设置</div>
+        <div class="dropSep"></div>
+        <div class="dropItem" onclick="doLogout()" style="color:var(--danger);">🚪 退出登录</div>
+      </div>
+    </div>
+    <button class="settingsBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <!-- Sub-tabs -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border-light);">
+    <div style="display:flex;gap:4px;">
+      <div style="padding:4px 12px;background:rgba(7,193,96,0.12);border-radius:4px;color:var(--accent);font-size:11px;font-weight:600;">文档编辑</div>
+      <div style="padding:4px 12px;color:var(--text-muted);font-size:11px;">实体浏览</div>
+    </div>
+    <button class="btnPrimarySm">同步到球体</button>
+  </div>
+
+  <!-- Body: DocTree + Editor -->
+  <div style="display:flex;flex:1;min-height:0;">
+    <!-- Left: Document Tree -->
+    <div style="width:185px;flex-shrink:0;border-right:1px solid var(--border-light);display:flex;flex-direction:column;background:var(--bg-secondary);">
+      <div style="padding:8px;">
+        <div style="padding:5px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:5px;margin-bottom:6px;font-size:10px;color:var(--text-muted);">搜索文档...</div>
+        <button class="btnPrimarySm" style="width:100%;font-size:10px;">+ 新建</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:0;">
+
+        <div class="treeItem"><span class="treeArrow">▼</span><span class="treeIcon">📁</span><span class="treeName" style="color:var(--text-muted);">入门指南</span></div>
+        <div class="treeItem active" style="padding-left:24px;position:relative;"><span class="treeIcon">📝</span><span class="treeName">快速开始</span>
+          <!-- Context menu -->
+          <div class="ctxMenu" style="top:20px;left:16px;">
+            <div class="ctxItem">📝 重命名</div>
+            <div class="ctxItem">📁 移动到...</div>
+            <div class="ctxSep"></div>
+            <div class="ctxItem">📂 显示文件位置</div>
+            <div class="ctxSep"></div>
+            <div class="ctxItem danger">🗑 删除</div>
+          </div>
+        </div>
+        <div class="treeItem" style="padding-left:24px;color:var(--text-secondary);"><span class="treeIcon">📝</span><span class="treeName">安装配置</span></div>
+
+        <div class="treeItem"><span class="treeArrow">▼</span><span class="treeIcon">📁</span><span class="treeName" style="color:var(--text-muted);">架构设计</span></div>
+        <div class="treeItem" style="padding-left:24px;color:var(--text-secondary);"><span class="treeIcon">📝</span><span class="treeName">系统架构</span></div>
+        <div class="treeItem" style="padding-left:24px;color:var(--text-secondary);"><span class="treeIcon">📝</span><span class="treeName">数据流设计</span></div>
+
+        <div class="treeItem"><span class="treeArrow">▼</span><span class="treeIcon">📁</span><span class="treeName" style="color:var(--text-muted);">子模块</span></div>
+        <div class="treeItem" style="padding-left:40px;color:var(--text-secondary);"><span class="treeIcon">📝</span><span class="treeName">Hermes Agent</span></div>
+        <div class="treeItem" style="padding-left:40px;color:var(--text-secondary);"><span class="treeIcon">🎨</span><span class="treeName">流程图.canvas</span></div>
+        <div class="treeItem" style="padding-left:40px;color:var(--text-secondary);"><span class="treeIcon">🖼</span><span class="treeName">部署图.png</span></div>
+
+        <div class="treeItem"><span class="treeArrow">▶</span><span class="treeIcon">📁</span><span class="treeName" style="color:var(--text-muted);">API 文档</span></div>
+        <div class="treeItem"><span class="treeArrow">▶</span><span class="treeIcon">📁</span><span class="treeName" style="color:var(--text-muted);">部署运维</span></div>
+        <div class="treeItem" style="color:var(--text-secondary);"><span class="treeIcon">📄</span><span class="treeName">README.md</span></div>
+      </div>
+    </div>
+
+    <!-- Right: Milkdown Editor -->
+    <div style="flex:1;display:flex;flex-direction:column;">
+      <!-- Toolbar -->
+      <div style="display:flex;align-items:center;gap:2px;padding:6px 12px;border-bottom:1px solid var(--border-light);flex-wrap:wrap;">
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:12px;cursor:pointer;font-weight:bold;">B</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:12px;cursor:pointer;font-style:italic;">I</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:10px;cursor:pointer;">H1</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:10px;cursor:pointer;">H2</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:10px;cursor:pointer;">H3</button>
+        <span style="color:var(--border);margin:0 4px;">|</span>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;">&lt;/&gt;</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;">链接</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;">图片</button>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;">表格</button>
+        <span style="color:var(--border);margin:0 4px;">|</span>
+        <button style="padding:4px 8px;background:transparent;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;">@提及</button>
+      </div>
+
+      <!-- Editor content -->
+      <div style="flex:1;overflow-y:auto;padding:16px 20px;font-size:12px;line-height:1.8;color:var(--text-secondary);">
+        <!-- Frontmatter -->
+        <div style="color:rgba(255,255,255,0.15);font-size:11px;margin-bottom:2px;">---</div>
+        <div style="color:rgba(255,255,255,0.15);font-size:11px;margin-bottom:2px;">title: "快速开始"</div>
+        <div style="color:rgba(255,255,255,0.15);font-size:11px;margin-bottom:2px;">tags: [入门, 教程]</div>
+        <div style="color:rgba(255,255,255,0.15);font-size:11px;margin-bottom:2px;">created: 2026-05-20</div>
+        <div style="color:rgba(255,255,255,0.15);font-size:11px;margin-bottom:12px;">---</div>
+
+        <div style="color:var(--text-primary);font-size:18px;font-weight:700;margin-bottom:10px;"># 快速开始</div>
+        <div style="margin-bottom:6px;">AI-Hel2 是一个桌面端 AI 助手，核心交互界面为 <span style="color:var(--accent);">3D 知识图谱球体</span> + 语音对话。</div>
+        <div style="margin-bottom:6px;">核心依赖 <span style="color:var(--accent);cursor:pointer;border-bottom:1px dashed rgba(7,193,96,0.3);">@Hermes Agent</span> 进行对话推理和知识管理。</div>
+        <div style="margin-bottom:6px;">通过 <span style="color:var(--accent);cursor:pointer;border-bottom:1px dashed rgba(7,193,96,0.3);">@知识图谱</span> 实现语义搜索与可视化。</div>
+        <div style="margin-bottom:6px;">支持 <span style="color:var(--accent);cursor:pointer;border-bottom:1px dashed rgba(7,193,96,0.3);">@Tauri 2.0</span> 桌面框架打包，跨平台运行。</div>
+        <div style="margin-top:12px;margin-bottom:4px;color:var(--text-primary);font-weight:600;">## 安装步骤</div>
+        <div style="margin-bottom:4px;">1. 下载对应平台的安装包</div>
+        <div style="margin-bottom:4px;">2. 解压并运行 <code style="background:var(--bg-surface);padding:1px 6px;border-radius:3px;font-size:10px;">AI-Hel2.exe</code></div>
+        <div style="margin-bottom:4px;">3. 首次启动会自动初始化知识库</div>
+        <div style="margin-top:10px;color:var(--text-primary);font-weight:600;">## 语音唤醒</div>
+        <div>说 <span style="color:var(--accent);font-weight:500;">"Hi Hel"</span> 唤醒语音助手，开始对话。</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">知识编辑 — 左侧文档树（右键菜单：重命名/移动/显示位置/删除）+ 右侧 Milkdown 编辑器 + frontmatter 面板</p>
+
+<!-- ====== PAGE 2: 知识编辑 - 实体浏览 Tab ====== -->
+<h1>页面2: 知识编辑 — 实体浏览 Tab</h1>
+<div class="mockup" style="width:960px; height:480px;">
+  <div class="tabBar">
+    <div style="display:flex;">
+      <button class="tab">对话球体</button>
+      <button class="tab active">知识编辑</button>
+      <button class="tab">画板</button>
+    </div>
+    <!-- User badge -->
+    <div class="userBadge" onclick="event.stopPropagation(); toggleUserDropdown(this);">
+      <div class="userAvatar userBadgeAvatar">?</div>
+      <span class="userName userBadgeName">未登录</span>
+      <div class="userDropdown">
+        <div class="dropItem">👤 个人信息</div>
+        <div class="dropItem">⚙ 系统设置</div>
+        <div class="dropSep"></div>
+        <div class="dropItem" onclick="doLogout()" style="color:var(--danger);">🚪 退出登录</div>
+      </div>
+    </div>
+    <button class="settingsBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <!-- Sub-tabs -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border-light);">
+    <div style="display:flex;gap:4px;">
+      <div style="padding:4px 12px;color:var(--text-muted);font-size:11px;">文档编辑</div>
+      <div style="padding:4px 12px;background:rgba(7,193,96,0.12);border-radius:4px;color:var(--accent);font-size:11px;font-weight:600;">实体浏览</div>
+    </div>
+    <button class="btnPrimarySm">在球体中定位</button>
+  </div>
+
+  <!-- Body: Entity list + Detail -->
+  <div style="display:flex;flex:1;min-height:0;">
+    <!-- Left: Entity list -->
+    <div style="width:155px;flex-shrink:0;border-right:1px solid var(--border-light);padding:10px 8px;background:var(--bg-secondary);display:flex;flex-direction:column;">
+      <div style="padding:5px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:5px;margin-bottom:8px;font-size:10px;color:var(--text-muted);">搜索实体...</div>
+
+      <div style="font-size:10px;color:rgba(205,214,244,0.25);margin-bottom:4px;padding-left:2px;text-transform:uppercase;letter-spacing:0.05em;">核心概念</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--accent);background:rgba(7,193,96,0.06);border-radius:4px;margin-bottom:2px;cursor:pointer;font-weight:500;">Hermes Agent</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">知识图谱</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">LLM 模型</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">语音交互</div>
+
+      <div style="font-size:10px;color:rgba(205,214,244,0.25);margin:10px 0 4px 2px;text-transform:uppercase;letter-spacing:0.05em;">普通实体</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">Tauri 2.0</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">Web Audio API</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">Whisper.cpp</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">SSE 流式</div>
+
+      <div style="font-size:10px;color:rgba(205,214,244,0.25);margin:10px 0 4px 2px;text-transform:uppercase;letter-spacing:0.05em;">文档实体</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">快速开始.md</div>
+      <div style="padding:5px 8px;font-size:11px;color:var(--text-secondary);border-radius:4px;margin-bottom:2px;cursor:pointer;">系统架构.md</div>
+    </div>
+
+    <!-- Right: Entity Detail -->
+    <div style="flex:1;padding:16px 20px;overflow-y:auto;">
+      <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:10px;">Hermes Agent</div>
+
+      <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;">
+        <span style="font-size:10px;color:var(--accent);background:rgba(7,193,96,0.08);padding:2px 8px;border-radius:3px;">核心概念</span>
+        <span style="font-size:10px;color:var(--text-muted);">类型: agent</span>
+        <span style="font-size:10px;color:var(--text-muted);">置信度: <span style="color:#f0c040;">0.95</span></span>
+        <span style="font-size:10px;color:var(--text-muted);">来源: 自动提取</span>
+      </div>
+
+      <div style="color:var(--text-secondary);font-size:12px;line-height:1.7;margin-bottom:16px;padding:12px;background:var(--bg-surface);border:1px solid var(--border-light);border-radius:6px;">
+        AI-Hel2 的核心智能体引擎，基于 Hermes 框架构建。负责对话推理、知识检索、工具调用和记忆管理。通过 HTTP SSE 与 Python 后端通信，支持流式响应和语音交互。
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.25);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">属性</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">
+          <div style="padding:4px 8px;background:var(--bg-surface);border-radius:3px;color:var(--text-muted);">版本: 2.1.0</div>
+          <div style="padding:4px 8px;background:var(--bg-surface);border-radius:3px;color:var(--text-muted);">端口: 8642</div>
+          <div style="padding:4px 8px;background:var(--bg-surface);border-radius:3px;color:var(--text-muted);">协议: HTTP SSE</div>
+          <div style="padding:4px 8px;background:var(--bg-surface);border-radius:3px;color:var(--text-muted);">状态: 运行中</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.25);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">关联实体 (8)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">知识图谱</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">LLM 模型</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">语音交互</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">TTS</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">工具调用</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">记忆管理</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">SSE 流式</span>
+          <span style="font-size:10px;color:var(--accent);border:1px solid rgba(7,193,96,0.2);padding:4px 10px;border-radius:14px;cursor:pointer;">对话历史</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.25);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">关系</div>
+        <div style="font-size:11px;color:var(--text-secondary);padding:4px 0;">→ <span style="color:#f0c040;">depends_on</span> LLM 模型 (置信度 0.92)</div>
+        <div style="font-size:11px;color:var(--text-secondary);padding:4px 0;">→ <span style="color:#f0c040;">manages</span> 知识图谱 (置信度 0.88)</div>
+        <div style="font-size:11px;color:var(--text-secondary);padding:4px 0;">→ <span style="color:#f0c040;">uses</span> 语音交互 (置信度 0.85)</div>
+        <div style="font-size:11px;color:var(--text-secondary);padding:4px 0;">→ <span style="color:#f0c040;">uses</span> TTS (置信度 0.83)</div>
+      </div>
+
+      <button class="btnPrimarySm" style="font-size:11px;padding:6px 14px;">在球体中定位</button>
+    </div>
+  </div>
+</div>
+<p class="caption">实体浏览 — 左侧分类列表（核心概念/普通实体/文档实体），右侧详情面板（属性/关联实体/关系）+ 球体定位按钮</p>
+
+<!-- ====== PAGE 3: 画板 (Excalidraw 暗色主题) ====== -->
+<h1>页面3: 画板（Excalidraw 暗色主题 — 对齐整体暗色风格）</h1>
+<div class="mockup" style="width:960px; height:520px;">
+  <div class="tabBar">
+    <div style="display:flex;">
+      <button class="tab">对话球体</button>
+      <button class="tab">知识编辑</button>
+      <button class="tab active">画板</button>
+    </div>
+    <!-- User badge -->
+    <div class="userBadge" onclick="event.stopPropagation(); toggleUserDropdown(this);">
+      <div class="userAvatar userBadgeAvatar">?</div>
+      <span class="userName userBadgeName">未登录</span>
+      <div class="userDropdown">
+        <div class="dropItem">👤 个人信息</div>
+        <div class="dropItem">⚙ 系统设置</div>
+        <div class="dropSep"></div>
+        <div class="dropItem" onclick="doLogout()" style="color:var(--danger);">🚪 退出登录</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;color:var(--text-muted);">流程图.canvas</span>
+      <span style="font-size:10px;color:var(--accent);opacity:0.7;">已保存</span>
+    </div>
+  </div>
+
+  <!-- Excalidraw dark layout -->
+  <div style="display:flex;flex:1;min-height:0;background:var(--bg-primary);">
+    <!-- Toolbar (dark) -->
+    <div style="width:42px;flex-shrink:0;background:var(--bg-secondary);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:4px;">
+      <div style="width:30px;height:30px;border-radius:5px;background:rgba(7,193,96,0.12);border:1px solid rgba(7,193,96,0.25);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);font-size:14px;" title="选择">↖</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="矩形">□</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="菱形">◇</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="圆形">○</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="箭头">→</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="连线">╲</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="画笔">✎</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="文字">T</div>
+      <div style="width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="图片">🖼</div>
+      <div style="margin-top:auto;width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:14px;" title="更多">⋯</div>
+    </div>
+
+    <!-- Canvas (dark) -->
+    <div style="flex:1;position:relative;overflow:hidden;">
+      <!-- Grid pattern (dark dots) -->
+      <div style="position:absolute;inset:0;background-image:radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);background-size:20px 20px;"></div>
+
+      <!-- Drawn elements (dark theme shapes) -->
+      <div style="position:absolute;top:60px;left:80px;width:200px;height:60px;border:2px solid var(--text-secondary);border-radius:6px;background:rgba(47,47,47,0.85);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-primary);font-weight:500;">用户输入</div>
+
+      <div style="position:absolute;top:60px;left:380px;width:200px;height:60px;border:2px solid var(--accent);border-radius:6px;background:rgba(7,193,96,0.08);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--accent);font-weight:500;">Hermes Agent</div>
+
+      <div style="position:absolute;top:180px;left:230px;width:200px;height:60px;border:2px solid var(--text-secondary);border-radius:6px;background:rgba(47,47,47,0.85);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-primary);font-weight:500;">知识检索</div>
+
+      <div style="position:absolute;top:180px;left:480px;width:200px;height:60px;border:2px solid var(--text-secondary);border-radius:6px;background:rgba(47,47,47,0.85);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-primary);font-weight:500;">TTS 输出</div>
+
+      <div style="position:absolute;top:300px;left:320px;width:200px;height:60px;border:2px solid var(--text-secondary);border-radius:6px;background:rgba(47,47,47,0.85);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-primary);font-weight:500;">3D 球体渲染</div>
+
+      <!-- Connection lines (SVG, light) -->
+      <svg style="position:absolute;inset:0;pointer-events:none;width:100%;height:100%;">
+        <line x1="280" y1="90" x2="380" y2="90" stroke="rgba(255,255,255,0.45)" stroke-width="1.5" marker-end="url(#arrowDark)"/>
+        <line x1="380" y1="120" x2="330" y2="180" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+        <line x1="480" y1="120" x2="530" y2="180" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+        <line x1="330" y1="240" x2="420" y2="300" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+        <line x1="530" y1="240" x2="470" y2="300" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+        <line x1="180" y1="90" x2="80" y2="180" stroke="rgba(205,214,244,0.25)" stroke-width="1.5" stroke-dasharray="6,3"/>
+        <text x="650" y="90" fill="rgba(255,255,255,0.3)" font-size="10">3D Sphere</text>
+        <defs><marker id="arrowDark" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.45)"/></marker></defs>
+      </svg>
+
+      <!-- Zoom controls (dark) -->
+      <div style="position:absolute;bottom:12px;right:16px;display:flex;gap:4px;align-items:center;">
+        <button style="width:28px;height:28px;border-radius:5px;border:1px solid var(--border);background:var(--bg-secondary);font-size:14px;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center;">−</button>
+        <span style="font-size:11px;color:var(--text-muted);">100%</span>
+        <button style="width:28px;height:28px;border-radius:5px;border:1px solid var(--border);background:var(--bg-secondary);font-size:14px;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center;">+</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">画板 — 暗色主题：工具栏 #2F2F2F 底色 + 暗色画布 + 半透明网格点 + 亮色连线 + 绿色高亮核心节点</p>
+
+<!-- ====== PAGE 4: 对话球体 (三栏布局 + 可折叠会话列表 + 精美3D球体) ====== -->
+<h1>页面1: 对话球体 — 三栏布局（可折叠会话列表 + 精美3D球体 + 对话面板）</h1>
+<div class="mockup" style="width:1060px; height:500px;">
+  <div class="tabBar">
+    <div style="display:flex;">
+      <button class="tab active">对话球体</button>
+      <button class="tab">知识编辑</button>
+      <button class="tab">画板</button>
+    </div>
+    <!-- User badge -->
+    <div class="userBadge" onclick="event.stopPropagation(); toggleUserDropdown(this);">
+      <div class="userAvatar userBadgeAvatar">?</div>
+      <span class="userName userBadgeName">未登录</span>
+      <div class="userDropdown">
+        <div class="dropItem">👤 个人信息</div>
+        <div class="dropItem">⚙ 系统设置</div>
+        <div class="dropSep"></div>
+        <div class="dropItem" onclick="doLogout()" style="color:var(--danger);">🚪 退出登录</div>
+      </div>
+    </div>
+    <button class="settingsBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <!-- Upper area: Session List | Sphere | Chat messages -->
+  <div style="display:flex;flex:1;min-height:0;">
+    <!-- Column 1: Session List (collapsible) -->
+    <div id="sessionList" class="sessionList expanded" style="flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-secondary);">
+      <div class="sessionContent" style="display:flex;flex-direction:column;height:100%;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border-light);">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary);">会话列表</span>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button style="width:24px;height:24px;border:1px solid rgba(7,193,96,0.25);border-radius:4px;background:rgba(7,193,96,0.08);color:var(--accent);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>
+            <button class="toggleSessionBtn" onclick="toggleSessionList()" title="折叠会话列表" style="font-size:10px;">◀</button>
+          </div>
+        </div>
+        <div style="padding:6px 8px;border-bottom:1px solid var(--border-light);">
+          <input placeholder="搜索会话..." style="width:100%;padding:5px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:11px;outline:none;">
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:4px 0;">
+          <div style="padding:10px 12px 4px;font-size:10px;color:var(--text-muted);">今天</div>
+          <div style="padding:8px 12px;border-left:2px solid var(--accent);margin:0 4px;border-radius:0 4px 4px 0;cursor:pointer;background:var(--bg-primary);position:relative;">
+            <div style="font-size:12px;color:var(--accent);font-weight:500;">Hermes Agent 架构讨论</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">claude-sonnet-4-6 · 12 条</div>
+            <!-- Context menu trigger -->
+            <div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);cursor:pointer;font-size:12px;" title="更多操作">⋯</div>
+            <!-- Context menu -->
+            <div class="ctxMenu" style="top:28px;right:0;">
+              <div class="ctxItem">✏ 重命名</div>
+              <div class="ctxSep"></div>
+              <div class="ctxItem danger">🗑 删除</div>
+            </div>
+          </div>
+          <div style="padding:8px 12px;border-left:2px solid transparent;margin:0 4px;cursor:pointer;">
+            <div style="font-size:12px;color:var(--text-secondary);">知识图谱优化方案</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">claude-sonnet-4-6 · 5 条</div>
+          </div>
+          <div style="padding:10px 12px 4px;font-size:10px;color:var(--text-muted);">昨天</div>
+          <div style="padding:8px 12px;border-left:2px solid transparent;margin:0 4px;cursor:pointer;">
+            <div style="font-size:12px;color:var(--text-secondary);">Tauri 2.0 迁移问题</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">gpt-4o · 8 条</div>
+          </div>
+          <div style="padding:10px 12px 4px;font-size:10px;color:var(--text-muted);">本周</div>
+          <div style="padding:8px 12px;border-left:2px solid transparent;margin:0 4px;cursor:pointer;">
+            <div style="font-size:12px;color:var(--text-secondary);">语音识别准确率测试</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">claude-sonnet-4-6 · 3 条</div>
+          </div>
+          <div style="padding:8px 12px;border-left:2px solid transparent;margin:0 4px;cursor:pointer;">
+            <div style="font-size:12px;color:var(--text-secondary);">3D 球体渲染性能</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">claude-sonnet-4-6 · 7 条</div>
+          </div>
+          <div style="padding:10px 12px 4px;font-size:10px;color:var(--text-muted);">更早</div>
+          <div style="padding:8px 12px;border-left:2px solid transparent;margin:0 4px;cursor:pointer;">
+            <div style="font-size:12px;color:var(--text-secondary);">项目初始化配置</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">claude-sonnet-4-6 · 15 条</div>
+          </div>
+        </div>
+      </div>
+      <div id="collapsedBar" style="display:none;flex-direction:column;align-items:center;padding-top:10px;height:100%;">
+        <button class="toggleSessionBtn" onclick="toggleSessionList()" title="展开会话列表" style="font-size:10px;">▶</button>
+      </div>
+    </div>
+
+    <!-- Resizer: Session List | Sphere+Chat -->
+    <div id="resizer1" class="panelResizer"></div>
+
+    <!-- Column 2+3 wrapper: Sphere + Chat side by side (no divider) -->
+    <div style="flex:1;display:flex;min-width:0;">
+
+      <!-- Sphere area (left, flex) -->
+      <div style="flex:1;background:var(--bg-primary);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;overflow:hidden;">
+
+        <!-- Ambient particles (gray-white) -->
+        <div class="particle" style="width:1px;height:1px;top:10%;left:15%;--dur:3.2s;--delay:0s;background:rgba(150,160,180,0.5);"></div>
+        <div class="particle" style="width:1px;height:1px;top:75%;left:80%;--dur:3.8s;--delay:0.5s;background:rgba(150,160,180,0.5);"></div>
+        <div class="particle" style="width:1px;height:1px;top:20%;left:72%;--dur:2.8s;--delay:1s;background:rgba(150,160,180,0.4);"></div>
+        <div class="particle" style="width:1px;height:1px;top:65%;left:10%;--dur:3.6s;--delay:0.3s;background:rgba(150,160,180,0.5);"></div>
+        <div class="particle" style="width:1px;height:1px;top:35%;left:85%;--dur:4s;--delay:1.4s;background:rgba(150,160,180,0.4);"></div>
+        <div class="particle" style="width:1px;height:1px;top:82%;left:48%;--dur:3s;--delay:1.8s;background:rgba(150,160,180,0.5);"></div>
+        <div class="particle" style="width:1px;height:1px;top:6%;left:40%;--dur:3.4s;--delay:0.2s;background:rgba(150,160,180,0.4);"></div>
+        <div class="particle" style="width:1px;height:1px;top:50%;left:5%;--dur:3.2s;--delay:1.1s;background:rgba(150,160,180,0.5);"></div>
+        <div class="particle" style="width:1px;height:1px;top:88%;left:28%;--dur:2.9s;--delay:0.7s;background:rgba(150,160,180,0.4);"></div>
+        <div class="particle" style="width:1px;height:1px;top:14%;left:90%;--dur:3.7s;--delay:1.5s;background:rgba(150,160,180,0.5);"></div>
+
+        <!-- Very faint outer ring hint -->
+        <div style="position:absolute;width:250px;height:250px;border-radius:50%;border:1px solid rgba(180,180,190,0.05);pointer-events:none;"></div>
+
+        <!-- Force-directed node cloud (~spherical, more organic placement) -->
+        <div style="position:relative;width:250px;height:250px;">
+
+          <!-- Scattered nodes - gray/white palette, organic positions -->
+          <!-- Top cluster -->
+          <div style="position:absolute;top:10px;left:108px;width:8px;height:8px;border-radius:50%;background:#b0b5bc;box-shadow:0 0 12px rgba(120,130,150,0.6);"></div>
+          <div style="position:absolute;top:22px;left:52px;width:5px;height:5px;border-radius:50%;background:#9ca3af;box-shadow:0 0 5px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:15px;left:175px;width:5px;height:5px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 5px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:8px;left:145px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.3);"></div>
+
+          <!-- Upper region scattered -->
+          <div style="position:absolute;top:38px;left:185px;width:8px;height:8px;border-radius:50%;background:#a8adb5;box-shadow:0 0 14px rgba(120,130,150,0.7);animation:nodeGlowWhite 2.8s ease-in-out 0.4s infinite;"></div>
+          <div style="position:absolute;top:34px;left:28px;width:9px;height:9px;border-radius:50%;background:#d1d5db;box-shadow:0 0 16px rgba(200,210,220,0.7);animation:nodeGlowWhite 2s ease-in-out infinite;"></div>
+          <div style="position:absolute;top:44px;left:95px;width:5px;height:5px;border-radius:50%;background:#9ca3af;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+          <div style="position:absolute;top:32px;left:140px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.3);"></div>
+          <div style="position:absolute;top:50px;left:210px;width:5px;height:5px;border-radius:50%;background:#b0b5bc;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+
+          <!-- Upper-mid (dense cluster) -->
+          <div style="position:absolute;top:62px;left:10px;width:7px;height:7px;border-radius:50%;background:#9ca3af;box-shadow:0 0 8px rgba(107,114,128,0.5);animation:nodeGlowWhite 3s ease-in-out 0.7s infinite;"></div>
+          <div style="position:absolute;top:58px;left:58px;width:5px;height:5px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+          <div style="position:absolute;top:54px;left:105px;width:10px;height:10px;border-radius:50%;background:#a8adb5;box-shadow:0 0 16px rgba(120,130,150,0.7);animation:nodeGlowWhite 2.4s ease-in-out 0.2s infinite;"></div>
+          <div style="position:absolute;top:62px;left:148px;width:6px;height:6px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 6px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:56px;left:190px;width:5px;height:5px;border-radius:50%;background:#8b9098;box-shadow:0 0 4px rgba(107,114,128,0.3);"></div>
+
+          <!-- Equator region (densest, most scattered) -->
+          <div style="position:absolute;top:82px;left:2px;width:6px;height:6px;border-radius:50%;background:#9ca3af;box-shadow:0 0 6px rgba(107,114,128,0.45);"></div>
+          <div style="position:absolute;top:76px;left:50px;width:6px;height:6px;border-radius:50%;background:#d1d5db;box-shadow:0 0 7px rgba(107,114,128,0.5);animation:nodeGlowWhite 3.2s ease-in-out 0.5s infinite;"></div>
+          <div style="position:absolute;top:72px;left:92px;width:10px;height:10px;border-radius:50%;background:#d1d5db;box-shadow:0 0 18px rgba(200,210,220,0.7);animation:nodeGlowWhite 2.2s ease-in-out 0.4s infinite;"></div>
+          <div style="position:absolute;top:80px;left:130px;width:5px;height:5px;border-radius:50%;background:#9ca3af;box-shadow:0 0 5px rgba(107,114,128,0.35);"></div>
+          <div style="position:absolute;top:78px;left:168px;width:7px;height:7px;border-radius:50%;background:#b0b5bc;box-shadow:0 0 9px rgba(120,130,150,0.55);animation:nodeGlowWhite 2.6s ease-in-out 1s infinite;"></div>
+          <div style="position:absolute;top:86px;left:208px;width:6px;height:6px;border-radius:50%;background:#9ca3af;box-shadow:0 0 5px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:74px;left:228px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.3);"></div>
+
+          <!-- Lower-mid -->
+          <div style="position:absolute;top:108px;left:18px;width:5px;height:5px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 4px rgba(107,114,128,0.3);"></div>
+          <div style="position:absolute;top:112px;left:62px;width:7px;height:7px;border-radius:50%;background:#d1d5db;box-shadow:0 0 8px rgba(107,114,128,0.5);animation:nodeGlowWhite 2.9s ease-in-out 0.8s infinite;"></div>
+          <div style="position:absolute;top:104px;left:106px;width:5px;height:5px;border-radius:50%;background:#8b9098;box-shadow:0 0 4px rgba(107,114,128,0.3);"></div>
+          <div style="position:absolute;top:110px;left:152px;width:6px;height:6px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 6px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:106px;left:192px;width:5px;height:5px;border-radius:50%;background:#9ca3af;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+          <div style="position:absolute;top:118px;left:225px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.3);"></div>
+
+          <!-- Lower region -->
+          <div style="position:absolute;top:142px;left:8px;width:5px;height:5px;border-radius:50%;background:#8b9098;box-shadow:0 0 4px rgba(107,114,128,0.3);"></div>
+          <div style="position:absolute;top:138px;left:52px;width:8px;height:8px;border-radius:50%;background:#9ca3af;box-shadow:0 0 10px rgba(120,130,150,0.55);animation:nodeGlowWhite 2.7s ease-in-out 1.3s infinite;"></div>
+          <div style="position:absolute;top:146px;left:98px;width:5px;height:5px;border-radius:50%;background:#9ca3af;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+          <div style="position:absolute;top:140px;left:138px;width:9px;height:9px;border-radius:50%;background:#d1d5db;box-shadow:0 0 16px rgba(200,210,220,0.7);animation:nodeGlowWhite 2.6s ease-in-out 0.7s infinite;"></div>
+          <div style="position:absolute;top:136px;left:182px;width:6px;height:6px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 5px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:144px;left:215px;width:5px;height:5px;border-radius:50%;background:#c0c5cc;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+
+          <!-- Bottom region -->
+          <div style="position:absolute;top:168px;left:35px;width:6px;height:6px;border-radius:50%;background:#9ca3af;box-shadow:0 0 5px rgba(107,114,128,0.4);"></div>
+          <div style="position:absolute;top:172px;left:82px;width:5px;height:5px;border-radius:50%;background:#8b9098;box-shadow:0 0 4px rgba(107,114,128,0.3);"></div>
+          <div style="position:absolute;top:164px;left:128px;width:7px;height:7px;border-radius:50%;background:#9ca3af;box-shadow:0 0 8px rgba(107,114,128,0.5);animation:nodeGlowWhite 3s ease-in-out 0.9s infinite;"></div>
+          <div style="position:absolute;top:170px;left:170px;width:5px;height:5px;border-radius:50%;background:#9ca3af;box-shadow:0 0 4px rgba(107,114,128,0.35);"></div>
+          <div style="position:absolute;top:166px;left:200px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.3);"></div>
+
+          <!-- Bottom cap -->
+          <div style="position:absolute;top:196px;left:58px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.25);"></div>
+          <div style="position:absolute;top:192px;left:110px;width:7px;height:7px;border-radius:50%;background:#d1d5db;box-shadow:0 0 8px rgba(107,114,128,0.5);animation:nodeGlowWhite 3.1s ease-in-out 1.4s infinite;"></div>
+          <div style="position:absolute;top:198px;left:155px;width:4px;height:4px;border-radius:50%;background:#8b9098;box-shadow:0 0 3px rgba(107,114,128,0.25);"></div>
+
+          <!-- Edge lines (gray-white) -->
+          <svg style="position:absolute;inset:-10px;width:270px;height:270px;pointer-events:none;">
+            <line x1="112" y1="14" x2="56" y2="38" stroke="rgba(107,114,128,0.18)" stroke-width="0.8"/>
+            <line x1="112" y1="14" x2="99" y2="48" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="112" y1="14" x2="179" y2="37" stroke="rgba(107,114,128,0.16)" stroke-width="0.8"/>
+            <line x1="32" y1="38" x2="62" y2="62" stroke="rgba(160,170,180,0.25)" stroke-width="0.8"/>
+            <line x1="32" y1="38" x2="14" y2="66" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="99" y1="48" x2="109" y2="58" stroke="rgba(107,114,128,0.18)" stroke-width="0.8"/>
+            <line x1="189" y1="42" x2="194" y2="60" stroke="rgba(107,114,128,0.16)" stroke-width="0.8"/>
+            <line x1="189" y1="42" x2="214" y2="54" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="14" y1="66" x2="6" y2="86" stroke="rgba(107,114,128,0.12)" stroke-width="0.8"/>
+            <line x1="62" y1="62" x2="54" y2="80" stroke="rgba(107,114,128,0.17)" stroke-width="0.8"/>
+            <line x1="109" y1="58" x2="96" y2="76" stroke="rgba(160,170,180,0.28)" stroke-width="0.8"/>
+            <line x1="109" y1="58" x2="134" y2="84" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="194" y1="60" x2="212" y2="90" stroke="rgba(107,114,128,0.17)" stroke-width="0.8"/>
+            <line x1="214" y1="54" x2="232" y2="78" stroke="rgba(107,114,128,0.12)" stroke-width="0.8"/>
+            <line x1="6" y1="86" x2="54" y2="80" stroke="rgba(107,114,128,0.12)" stroke-width="0.7"/>
+            <line x1="54" y1="80" x2="96" y2="76" stroke="rgba(107,114,128,0.2)" stroke-width="0.8"/>
+            <line x1="96" y1="76" x2="134" y2="84" stroke="rgba(107,114,128,0.16)" stroke-width="0.8"/>
+            <line x1="134" y1="84" x2="172" y2="82" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="172" y1="82" x2="212" y2="90" stroke="rgba(107,114,128,0.18)" stroke-width="0.8"/>
+            <line x1="212" y1="90" x2="232" y2="78" stroke="rgba(107,114,128,0.12)" stroke-width="0.8"/>
+            <line x1="6" y1="86" x2="22" y2="112" stroke="rgba(107,114,128,0.1)" stroke-width="0.8"/>
+            <line x1="54" y1="80" x2="66" y2="116" stroke="rgba(107,114,128,0.17)" stroke-width="0.8"/>
+            <line x1="96" y1="76" x2="110" y2="108" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="134" y1="84" x2="156" y2="114" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="172" y1="82" x2="196" y2="110" stroke="rgba(107,114,128,0.17)" stroke-width="0.8"/>
+            <line x1="212" y1="90" x2="229" y2="122" stroke="rgba(107,114,128,0.12)" stroke-width="0.8"/>
+            <line x1="22" y1="112" x2="56" y2="142" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="66" y1="116" x2="102" y2="150" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="110" y1="108" x2="142" y2="144" stroke="rgba(160,170,180,0.25)" stroke-width="0.8"/>
+            <line x1="156" y1="114" x2="186" y2="140" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="196" y1="110" x2="219" y2="148" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="12" y1="146" x2="39" y2="172" stroke="rgba(107,114,128,0.1)" stroke-width="0.8"/>
+            <line x1="56" y1="142" x2="86" y2="176" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="102" y1="150" x2="132" y2="168" stroke="rgba(107,114,128,0.17)" stroke-width="0.8"/>
+            <line x1="142" y1="144" x2="174" y2="174" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="186" y1="140" x2="204" y2="170" stroke="rgba(107,114,128,0.11)" stroke-width="0.8"/>
+            <line x1="62" y1="172" x2="114" y2="196" stroke="rgba(107,114,128,0.13)" stroke-width="0.8"/>
+            <line x1="132" y1="168" x2="114" y2="196" stroke="rgba(107,114,128,0.15)" stroke-width="0.8"/>
+            <line x1="174" y1="174" x2="159" y2="202" stroke="rgba(107,114,128,0.1)" stroke-width="0.8"/>
+          </svg>
+        </div>
+
+        <!-- Labels near gold highlight nodes -->
+        <div style="position:absolute;top:18px;left:calc(50% - 86px);color:rgba(180,190,200,0.55);font-size:9px;pointer-events:none;text-shadow:0 0 6px rgba(180,190,200,0.3);white-space:nowrap;">LLM 模型</div>
+        <div style="position:absolute;top:calc(50% - 60px);left:calc(50% + 48px);color:rgba(180,190,200,0.55);font-size:9px;pointer-events:none;text-shadow:0 0 8px rgba(180,190,200,0.35);white-space:nowrap;">Hermes Agent</div>
+        <div style="position:absolute;top:calc(50% + 48px);left:calc(50% - 32px);color:rgba(180,190,200,0.5);font-size:9px;pointer-events:none;text-shadow:0 0 6px rgba(180,190,200,0.3);white-space:nowrap;">知识图谱</div>
+
+        <!-- Legend -->
+        <div style="position:absolute;bottom:6px;left:12px;display:flex;gap:12px;font-size:9px;color:rgba(205,214,244,0.25);">
+          <span>● 实体</span><span style="color:#d1d5db;">● 核心概念</span><span style="opacity:0.4;">— 关联</span>
+        </div>
+
+        <!-- Red voice button below the sphere -->
+        <div style="position:absolute;bottom:32px;left:50%;transform:translateX(-50%);">
+          <button style="width:48px;height:48px;border-radius:50%;border:none;background:var(--danger);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 24px rgba(250,81,81,0.5);animation:pulse 1.8s ease-in-out infinite;" title="语音输入">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat area (right, fixed width) -->
+      <div id="chatPanel" style="width:310px;flex-shrink:0;display:flex;flex-direction:column;background:var(--bg-primary);position:relative;">
+        <!-- Chat messages -->
+        <div style="flex:1;overflow-y:auto;padding:12px 12px 60px 12px;display:flex;flex-direction:column;gap:8px;">
+          <div style="text-align:center;color:var(--text-muted);margin-top:30px;font-size:12px;">
+            <div>说 "Hi Hel" 唤醒我</div>
+            <div style="font-size:10px;color:var(--text-muted);opacity:0.6;margin-top:4px;">或直接在下方输入文字</div>
+          </div>
+          <div style="align-self:flex-end;max-width:85%;padding:8px 12px;border-radius:12px 12px 4px 12px;font-size:12px;background:var(--accent);color:#000;line-height:1.5;">
+            <div style="font-size:9px;color:rgba(0,0,0,0.5);margin-bottom:2px;">你</div>
+            Hermes Agent 的架构是什么样的？
+          </div>
+          <div style="align-self:flex-start;max-width:85%;padding:8px 12px;border-radius:12px 12px 12px 4px;font-size:12px;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);line-height:1.5;">
+            <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px;">AI</div>
+            Hermes Agent 采用模块化架构，核心包括：推理引擎、知识检索、工具调用、记忆管理四个主要模块...
+          </div>
+        </div>
+
+        <!-- Floating input bar below chat -->
+        <div style="position:absolute;bottom:12px;left:10px;right:10px;display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.35);">
+          <button style="width:28px;height:28px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:5px;" title="上传文件">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <button style="width:28px;height:28px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:5px;" title="截图">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </button>
+          <input style="flex:1;padding:6px 10px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:11px;outline:none;min-width:0;" placeholder="输入消息...">
+          <button style="padding:6px 14px;background:var(--accent);border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;font-weight:500;flex-shrink:0;">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">对话球体 — 三栏可拖拽调整（分隔线拖动）+ 可折叠会话列表（右键菜单：重命名/删除）+ 灰白力学节点云 + 红色语音按钮 + 对话面板 + 悬浮输入栏</p>
+
+<script>
+// ── Splash → Login/Register → Main flow ──
+var splash = document.getElementById('splash');
+var splashVideo = document.getElementById('splashVideo');
+var loginOverlay = document.getElementById('loginOverlay');
+var currentUser = null; // { name, email, avatarLetter }
+
+splashVideo.addEventListener('ended', function() {
+  splash.classList.add('fadeOut');
+  loginOverlay.classList.remove('hidden');
+});
+
+function skipSplash() {
+  splashVideo.pause();
+  splash.classList.add('fadeOut');
+  loginOverlay.classList.remove('hidden');
+}
+
+// ── Login / Register toggle ──
+function showRegister() {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('registerForm').style.display = 'flex';
+  document.getElementById('registerForm').style.flexDirection = 'column';
+  document.getElementById('registerForm').style.gap = '20px';
+  document.getElementById('switchLink').innerHTML = '已有账号？<a onclick="showLogin()">立即登录</a>';
+}
+
+function showLogin() {
+  document.getElementById('loginForm').style.display = 'block';
+  document.getElementById('registerForm').style.display = 'none';
+  document.getElementById('switchLink').innerHTML = '没有账号？<a onclick="showRegister()">立即注册</a>';
+}
+
+// ── User state ──
+function setUser(name) {
+  currentUser = { name: name, email: '', avatarLetter: name.charAt(0).toUpperCase() };
+  // Update all user badges across pages
+  var badges = document.querySelectorAll('.userBadgeName');
+  var avatars = document.querySelectorAll('.userBadgeAvatar');
+  for (var i = 0; i < badges.length; i++) { badges[i].textContent = name; }
+  for (var j = 0; j < avatars.length; j++) { avatars[j].textContent = currentUser.avatarLetter; }
+}
+
+function doLogin() {
+  var name = document.getElementById('loginUser').value.trim();
+  if (!name) { alert('请输入用户名'); return; }
+  setUser(name);
+  loginOverlay.classList.add('hidden');
+  showApiSetup();
+  showLogin();
+}
+
+function doRegister() {
+  var name = document.getElementById('regUser').value.trim();
+  var email = document.getElementById('regEmail').value.trim();
+  var pass = document.getElementById('regPass').value;
+  var pass2 = document.getElementById('regPass2').value;
+  if (!name) { alert('请输入用户名'); return; }
+  if (pass.length < 6) { alert('密码至少6位'); return; }
+  if (pass !== pass2) { alert('两次密码不一致'); return; }
+  setUser(name);
+  if (email) currentUser.email = email;
+  loginOverlay.classList.add('hidden');
+  showApiSetup();
+  showLogin();
+  // Clear register fields
+  document.getElementById('regUser').value = '';
+  document.getElementById('regEmail').value = '';
+  document.getElementById('regPass').value = '';
+  document.getElementById('regPass2').value = '';
+}
+
+// ── API Setup (First-run wizard) ──
+var apiSetupOverlay = document.getElementById('apiSetupOverlay');
+// Store configured API keys: { anthropic: 'sk-xxx', openai: 'sk-yyy', ... }
+var apiConfigs = {};
+
+function showApiSetup() {
+  apiSetupOverlay.classList.remove('hidden');
+}
+
+function focusKeyInput(provRow) {
+  var input = provRow.querySelector('.keyInput');
+  if (input) input.focus();
+}
+
+function selectProvRow(input) {
+  var rows = document.querySelectorAll('.provRow');
+  for (var i = 0; i < rows.length; i++) { rows[i].classList.remove('active'); }
+  input.closest('.provRow').classList.add('active');
+}
+
+function onKeyInput(input) {
+  var row = input.closest('.provRow');
+  var provider = row.getAttribute('data-provider');
+  var status = row.querySelector('.provStatus');
+  var val = input.value.trim();
+
+  if (val.length > 0) {
+    apiConfigs[provider] = val;
+    status.textContent = '已配置 ✓';
+    status.className = 'provStatus done';
+  } else {
+    delete apiConfigs[provider];
+    status.textContent = '未配置';
+    status.className = 'provStatus';
+  }
+  updateReadyCount();
+}
+
+function updateReadyCount() {
+  var count = Object.keys(apiConfigs).length;
+  document.getElementById('readyCount').textContent = count;
+}
+
+function saveApiSetup() {
+  currentUser.apiConfigs = apiConfigs;
+  apiSetupOverlay.classList.add('hidden');
+}
+
+function skipApiSetup() {
+  currentUser.apiConfigs = {};
+  apiSetupOverlay.classList.add('hidden');
+}
+
+// ── User dropdown toggle ──
+function toggleUserDropdown(el) {
+  var dd = el.querySelector('.userDropdown');
+  var isOpen = dd.classList.contains('show');
+  // Close all dropdowns first
+  var all = document.querySelectorAll('.userDropdown');
+  for (var i = 0; i < all.length; i++) { all[i].classList.remove('show'); }
+  if (!isOpen) dd.classList.add('show');
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.userBadge')) {
+    var all = document.querySelectorAll('.userDropdown');
+    for (var i = 0; i < all.length; i++) { all[i].classList.remove('show'); }
+  }
+});
+
+function doLogout() {
+  currentUser = null;
+  var badges = document.querySelectorAll('.userBadgeName');
+  var avatars = document.querySelectorAll('.userBadgeAvatar');
+  for (var i = 0; i < badges.length; i++) { badges[i].textContent = '未登录'; }
+  for (var j = 0; j < avatars.length; j++) { avatars[j].textContent = '?'; }
+  loginOverlay.classList.remove('hidden');
+  showLogin();
+}
+
+// Enter key support for overlays
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  if (!loginOverlay.classList.contains('hidden')) {
+    doLogin();
+  } else if (!apiSetupOverlay.classList.contains('hidden')) {
+    saveApiSetup();
+  }
+});
+
+// ── Toggle session list collapse/expand ──
+function toggleSessionList() {
+  var list = document.getElementById('sessionList');
+  var content = list.querySelector('.sessionContent');
+  var bar = document.getElementById('collapsedBar');
+  var btns = list.querySelectorAll('.toggleSessionBtn');
+
+  if (list.classList.contains('expanded')) {
+    list.classList.remove('expanded');
+    list.classList.add('collapsed');
+    content.style.display = 'none';
+    bar.style.display = 'flex';
+    list.style.width = '36px';
+  } else {
+    list.classList.remove('collapsed');
+    list.classList.add('expanded');
+    content.style.display = 'flex';
+    bar.style.display = 'none';
+    list.style.width = '210px';
+  }
+}
+
+// Panel resizer — AI-Hel style drag-to-resize
+function initResizer(resizer, options) {
+  var getWidth = options.getWidth;
+  var setWidth = options.setWidth;
+  var minWidth = options.minWidth || 100;
+  var maxWidth = options.maxWidth || 600;
+  var dragging = false;
+  var startX = 0;
+
+  resizer.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var delta = e.clientX - startX;
+    startX = e.clientX;
+    var newWidth = Math.min(maxWidth, Math.max(minWidth, getWidth() + delta));
+    setWidth(newWidth);
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
+// Initialize resizers after DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+  var sessionList = document.getElementById('sessionList');
+  var chatPanel = document.getElementById('chatPanel');
+
+  // Resizer 1: Session list width
+  var resizer1 = document.getElementById('resizer1');
+  if (resizer1 && sessionList) {
+    initResizer(resizer1, {
+      getWidth: function() { return sessionList.offsetWidth; },
+      setWidth: function(w) {
+        sessionList.style.width = w + 'px';
+        sessionList.style.flexShrink = '0';
+      },
+      minWidth: 180,
+      maxWidth: 400
+    });
+  }
+
+  // Resizer 2: Chat panel width (drag left ← to widen, drag right → to narrow)
+  var resizer2 = document.getElementById('resizer2');
+  if (resizer2 && chatPanel) {
+    initResizer(resizer2, {
+      getWidth: function() { return chatPanel.offsetWidth; },
+      setWidth: function(w) {
+        chatPanel.style.width = w + 'px';
+        chatPanel.style.flexShrink = '0';
+      },
+      minWidth: 200,
+      maxWidth: 500
+    });
+  }
+});
+</script>
+
+</body>
+</html>

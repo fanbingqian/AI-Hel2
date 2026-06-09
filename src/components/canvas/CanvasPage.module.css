@@ -1,0 +1,71 @@
+.canvas {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #1A1A1A;
+  position: relative;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #808080;
+  border-bottom: 1px solid #333333;
+  background: #2F2F2F;
+}
+
+.toolbarFilename {
+  font-size: 11px;
+  color: #808080;
+}
+
+.toolbarSaved {
+  font-size: 10px;
+  color: #07c160;
+  opacity: 0.7;
+}
+
+.hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 6px 14px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.excalContainer {
+  flex: 1;
+  min-height: 0;
+  /* Override Excalidraw dark theme CSS variables to match project design tokens */
+  --default-bg-color: #1A1A1A;
+  --input-bg-color: #2C2C2C;
+  --input-hover-bg-color: #2F2F2F;
+  --island-bg-color: #2F2F2F;
+  --color-primary: #07c160;
+  --color-primary-darker: #06ad56;
+  --color-primary-darkest: #059648;
+  --color-primary-light: rgba(7, 193, 96, 0.15);
+  --color-primary-light-darker: rgba(7, 193, 96, 0.25);
+  --color-primary-hover: #1edb73;
+  --button-gray-1: #3A3A3A;
+  --button-gray-2: #2F2F2F;
+  --button-gray-3: #252525;
+  --button-special-active-bg-color: rgba(7, 193, 96, 0.12);
+  --input-border-color: #3A3A3A;
+  --dialog-border-color: #3A3A3A;
+  --popup-secondary-bg-color: #2F2F2F;
+  --select-highlight-color: #07c160;
+  --link-color: #07c160;
+  --icon-green-fill-color: #07c160;
+  --focus-highlight-color: #07c160;
+}

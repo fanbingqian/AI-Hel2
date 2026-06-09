@@ -1,0 +1,34 @@
+.btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  transition: all 0.2s;
+  background: #27ae60;
+  color: #fff;
+}
+
+.btn:hover {
+  background: #2ecc71;
+}
+
+.btn.listening {
+  background: #e74c3c;
+  color: #fff;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.btn.listening:hover {
+  background: #c0392b;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.6); }
+  50% { box-shadow: 0 0 0 8px rgba(231, 76, 60, 0); }
+}

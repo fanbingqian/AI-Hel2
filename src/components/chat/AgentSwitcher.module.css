@@ -1,0 +1,41 @@
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-color, #333);
+  background: var(--bg-secondary, #1e1e1e);
+}
+
+.select {
+  background: var(--bg-input, #252525);
+  color: var(--text-primary, #e0e0e0);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  max-width: 200px;
+}
+
+.select:focus {
+  border-color: #6b8cff;
+}
+
+.connDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.connDot[data-connected="1"] {
+  background-color: #07c160;
+  box-shadow: 0 0 6px rgba(7, 193, 96, 0.4);
+}
+
+.connDot[data-connected="0"] {
+  background-color: #fa5151;
+}

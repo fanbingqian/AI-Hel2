@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-Hel2 页面设计 v5</title>
+<style>
+:root {
+  --bg-primary: #1A1A1A;
+  --bg-secondary: #2F2F2F;
+  --bg-hover: #3A3A3A;
+  --bg-surface: #2C2C2C;
+  --text-primary: #e6e6e6;
+  --text-secondary: #b3b3b3;
+  --text-muted: #808080;
+  --accent: #07c160;
+  --accent-hover: #06ad56;
+  --border: #3A3A3A;
+  --border-light: #333333;
+  --danger: #fa5151;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: Microsoft YaHei, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  background: #111; color: var(--text-primary);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px; gap: 24px; min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+h1 { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+.mockup {
+  width: 940px; height: 700px;
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.mockupTall { height: 760px; }
+
+.tabBar { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:var(--bg-secondary); padding:0 12px; height:40px; flex-shrink:0; }
+.tabsGroup { display:flex; }
+.tab { padding:10px 20px; border:none; background:transparent; color:var(--text-muted); font-size:13px; cursor:pointer; border-bottom:2px solid transparent; transition:color 0.15s; font-family:inherit; }
+.tab:hover { color:var(--text-primary); }
+.tabActive, .settingsBtnActive { color:var(--accent) !important; border-bottom-color:var(--accent) !important; }
+.settingsBtn { padding:6px 10px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; display:flex; align-items:center; transition:color 0.15s; }
+.settingsBtn:hover { color:var(--text-primary); }
+
+.page { display:flex; flex:1; min-height:0; }
+.sidebar { width:175px; flex-shrink:0; border-right:1px solid var(--border); padding:16px 0; background:var(--bg-secondary); }
+.sidebarTitle { padding:0 16px 12px; font-size:13px; font-weight:600; color:var(--text-primary); }
+.navItem { display:block; width:100%; text-align:left; padding:8px 16px; border:none; background:transparent; color:var(--text-muted); font-size:12px; cursor:pointer; border-left:2px solid transparent; transition:all 0.15s; font-family:inherit; }
+.navItem:hover { color:var(--text-primary); background:rgba(255,255,255,0.04); }
+.navItem.navActive { color:var(--accent); background:rgba(7,193,96,0.06); border-left-color:var(--accent); }
+.content { flex:1; overflow-y:auto; padding:24px 32px; background:var(--bg-primary); }
+
+.sectionTitle { font-size:16px; font-weight:600; color:var(--text-primary); margin-bottom:20px; }
+.fieldGroup { margin-bottom:14px; }
+.label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+.textInput { width:100%; max-width:400px; padding:7px 10px; background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px; outline:none; font-family:inherit; }
+.textInput:focus { border-color:var(--accent); }
+.select { padding:7px 10px; background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px; outline:none; cursor:pointer; min-width:200px; font-family:inherit; }
+.select:focus { border-color:var(--accent); }
+.select option { background:var(--bg-secondary); color:var(--text-primary); }
+.btnPrimary { padding:7px 16px; background:rgba(7,193,96,0.1); border:1px solid rgba(7,193,96,0.25); border-radius:6px; color:var(--accent); font-size:12px; cursor:pointer; transition:background 0.15s; font-family:inherit; }
+.btnPrimary:hover { background:rgba(7,193,96,0.2); }
+.btnDanger { padding:7px 16px; background:rgba(250,81,81,0.1); border:1px solid rgba(250,81,81,0.25); border-radius:6px; color:var(--danger); font-size:12px; cursor:pointer; font-family:inherit; }
+.btnDanger:hover { background:rgba(250,81,81,0.2); }
+.btnSm { padding:3px 10px; border-radius:4px; font-size:10px; cursor:pointer; font-family:inherit; }
+.btnSm2 { padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit; }
+.desc { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+.badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:500; }
+.badgeGreen { background:rgba(7,193,96,0.12); color:var(--accent); }
+.badgeGray { background:rgba(255,255,255,0.06); color:var(--text-muted); }
+.badgeYellow { background:rgba(255,200,60,0.12); color:#f0c040; }
+.badgeRed { background:rgba(250,81,81,0.1); color:var(--danger); }
+
+.toggle { display:flex; align-items:center; gap:10px; }
+.toggleSwitch { width:40px; height:22px; border-radius:11px; border:none; cursor:pointer; position:relative; transition:background 0.2s; display:inline-block; }
+.toggleSwitch.tgOn { background:rgba(7,193,96,0.4); }
+.toggleSwitch.tgOff { background:rgba(255,255,255,0.12); }
+.tgKnob { width:18px; height:18px; border-radius:50%; background:#fff; position:absolute; top:2px; transition:transform 0.2s; }
+
+.card { padding:14px; background:var(--bg-surface); border:1px solid var(--border-light); border-radius:6px; margin-bottom:10px; }
+
+.pills { display:flex; flex-wrap:wrap; gap:6px; }
+.pill { padding:5px 12px; border-radius:14px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:11px; cursor:pointer; transition:all 0.15s; font-family:inherit; }
+.pill:hover { border-color:var(--accent); color:var(--text-primary); }
+.pill.pillActive { background:rgba(7,193,96,0.12); border-color:rgba(7,193,96,0.3); color:var(--accent); }
+
+.avatar { width:64px; height:64px; border-radius:8px; background:var(--bg-hover); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:26px; color:var(--accent); margin-bottom:12px; position:relative; cursor:pointer; overflow:hidden; }
+.avatarOverlay { position:absolute; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.15s; font-size:10px; color:#fff; }
+.avatar:hover .avatarOverlay { opacity:1; }
+.caption { text-align:center; color:var(--text-muted); font-size:11px; margin-top:8px; }
+
+.svcCard { border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:14px; background:var(--bg-surface); }
+.svcHeader { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.svcName { font-size:14px; font-weight:600; color:var(--text-primary); }
+.svcDot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.svcDot.on { background:var(--accent); box-shadow:0 0 6px rgba(7,193,96,0.4); }
+.svcDot.off { background:#555; }
+
+/* Platform grid */
+.pltGrid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.pltCard { padding:10px 12px; background:var(--bg-surface); border:1px solid var(--border-light); border-radius:6px; display:flex; align-items:center; justify-content:space-between; }
+.pltCard:hover { border-color:var(--border); }
+.pltName { font-size:12px; color:var(--text-primary); font-weight:500; }
+.pltDesc { font-size:10px; color:var(--text-muted); margin-top:1px; }
+
+/* Key row */
+.keyRow { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-surface); border:1px solid var(--border-light); border-radius:6px; margin-bottom:6px; }
+.keyRow .provider { font-size:12px; color:var(--text-secondary); min-width:110px; }
+.keyRow input { flex:1; }
+
+/* Session list */
+.sessList { width:210px; flex-shrink:0; border-right:1px solid var(--border); display:flex; flex-direction:column; background:var(--bg-secondary); }
+.sessHead { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid var(--border-light); }
+.sessTitle { font-size:12px; font-weight:600; color:var(--text-secondary); }
+.sessNew { width:24px; height:24px; border:1px solid rgba(7,193,96,0.25); border-radius:4px; background:rgba(7,193,96,0.08); color:var(--accent); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-family:inherit; line-height:1; }
+.sessSearch { padding:6px 8px; border-bottom:1px solid var(--border-light); }
+.sessSearch input { width:100%; padding:5px 8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:11px; outline:none; font-family:inherit; }
+.sessSearch input:focus { border-color:var(--accent); }
+.sessTree { flex:1; overflow-y:auto; padding:4px 0; }
+.sessGroup { padding:10px 12px 4px; font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.03em; }
+.sessItem { padding:8px 12px; border-left:2px solid transparent; margin:0 4px; border-radius:0 4px 4px 0; cursor:pointer; }
+.sessItem:hover { background:rgba(255,255,255,0.04); }
+.sessItem.active { border-left-color:var(--accent); background:var(--bg-primary); }
+.sessItemTitle { font-size:12px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sessItem.active .sessItemTitle { color:var(--accent); font-weight:500; }
+.sessItemMeta { font-size:10px; color:var(--text-muted); margin-top:2px; }
+</style>
+</head>
+<body>
+
+<!-- ====== 设置页面 ====== -->
+<h1>设置页面（完整网关+模型列表）</h1>
+<div class="mockup mockupTall" id="mockupSettings">
+  <div class="tabBar">
+    <div class="tabsGroup">
+      <button class="tab">对话球体</button>
+      <button class="tab">知识编辑</button>
+      <button class="tab">画板</button>
+    </div>
+    <button class="settingsBtn settingsBtnActive">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+  <div class="page">
+    <aside class="sidebar">
+      <div class="sidebarTitle">设置</div>
+      <button class="navItem navActive" onclick="switchSettings('account', this)">账户信息</button>
+      <button class="navItem" onclick="switchSettings('model', this)">大模型配置</button>
+      <button class="navItem" onclick="switchSettings('gateway', this)">网关配置</button>
+      <button class="navItem" onclick="switchSettings('theme', this)">主题</button>
+      <button class="navItem" onclick="switchSettings('language', this)">语言</button>
+      <button class="navItem" onclick="switchSettings('update', this)">更新</button>
+      <button class="navItem" onclick="switchSettings('migration', this)">数据迁移</button>
+      <button class="navItem" onclick="switchSettings('tasks', this)">定时任务</button>
+    </aside>
+    <main class="content" id="settingsContent"></main>
+  </div>
+</div>
+<p class="caption">设置页 — 所有网关平台、模型提供商、API Key 均按 hermes-desktop 完整列表</p>
+
+<!-- ====== 对话球体三栏布局 ====== -->
+<h1>对话球体 — 三栏布局（会话列表 + 球体 + 对话）</h1>
+<div style="width:1060px; height:500px; background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:var(--bg-secondary);padding:0 12px;height:40px;flex-shrink:0;">
+    <div style="display:flex;">
+      <button class="tab tabActive">对话球体</button>
+      <button class="tab">知识编辑</button>
+      <button class="tab">画板</button>
+    </div>
+    <button class="settingsBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+  <div style="display:flex;flex:1;min-height:0;">
+    <div class="sessList">
+      <div class="sessHead">
+        <span class="sessTitle">会话列表</span>
+        <button class="sessNew">+</button>
+      </div>
+      <div class="sessSearch"><input placeholder="搜索会话..."></div>
+      <div class="sessTree">
+        <div class="sessGroup">今天</div>
+        <div class="sessItem active">
+          <div class="sessItemTitle">Hermes Agent 架构讨论</div>
+          <div class="sessItemMeta">claude-sonnet-4-6 · 12 条消息</div>
+        </div>
+        <div class="sessItem">
+          <div class="sessItemTitle">知识图谱优化方案</div>
+          <div class="sessItemMeta">claude-sonnet-4-6 · 5 条消息</div>
+        </div>
+        <div class="sessGroup">昨天</div>
+        <div class="sessItem">
+          <div class="sessItemTitle">Tauri 2.0 迁移问题</div>
+          <div class="sessItemMeta">gpt-4o · 8 条消息</div>
+        </div>
+        <div class="sessGroup">本周</div>
+        <div class="sessItem">
+          <div class="sessItemTitle">语音识别准确率测试</div>
+          <div class="sessItemMeta">claude-sonnet-4-6 · 3 条消息</div>
+        </div>
+        <div class="sessItem">
+          <div class="sessItemTitle">3D 球体渲染性能</div>
+          <div class="sessItemMeta">claude-sonnet-4-6 · 7 条消息</div>
+        </div>
+        <div class="sessGroup">更早</div>
+        <div class="sessItem">
+          <div class="sessItemTitle">项目初始化配置</div>
+          <div class="sessItemMeta">claude-sonnet-4-6 · 15 条消息</div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;background:radial-gradient(ellipse at center, #0d2f0d 0%, #111 70%);display:flex;align-items:center;justify-content:center;position:relative;">
+      <div style="width:220px;height:220px;border-radius:50%;background:radial-gradient(circle at 40% 35%, rgba(110,231,183,0.15) 0%, rgba(10,26,10,0.9) 60%, #0a1a0a 100%);border:1px solid rgba(110,231,183,0.12);box-shadow:0 0 60px rgba(110,231,183,0.08), inset 0 0 40px rgba(0,0,0,0.3);position:relative;">
+        <div style="position:absolute;top:30px;left:60px;width:6px;height:6px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 6px rgba(110,231,183,0.6);"></div>
+        <div style="position:absolute;top:55px;left:110px;width:8px;height:8px;border-radius:50%;background:#f0c040;box-shadow:0 0 10px rgba(240,192,64,0.7);"></div>
+        <div style="position:absolute;top:80px;left:40px;width:5px;height:5px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 4px rgba(110,231,183,0.5);"></div>
+        <div style="position:absolute;top:100px;left:150px;width:5px;height:5px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 4px rgba(110,231,183,0.5);"></div>
+        <div style="position:absolute;top:130px;left:70px;width:4px;height:4px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 3px rgba(110,231,183,0.4);"></div>
+        <div style="position:absolute;top:150px;left:120px;width:6px;height:6px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 5px rgba(110,231,183,0.5);"></div>
+        <div style="position:absolute;top:170px;left:50px;width:4px;height:4px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 3px rgba(110,231,183,0.4);"></div>
+        <div style="position:absolute;top:60px;left:170px;width:3px;height:3px;border-radius:50%;background:#6ee7b7;box-shadow:0 0 2px rgba(110,231,183,0.4);"></div>
+      </div>
+    </div>
+    <div style="width:310px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-primary);">
+      <div style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;">
+        <div style="text-align:center;color:var(--text-muted);margin-top:30px;font-size:12px;">
+          <div>说 "Hi Hel" 唤醒我</div>
+          <div style="font-size:10px;color:var(--text-muted);opacity:0.6;margin-top:4px;">或直接在下方输入文字</div>
+        </div>
+        <div style="align-self:flex-end;max-width:85%;padding:8px 12px;border-radius:12px 12px 4px 12px;font-size:12px;background:var(--accent);color:#000;line-height:1.5;">
+          <div style="font-size:9px;color:rgba(0,0,0,0.5);margin-bottom:2px;">你</div>
+          Hermes Agent 的架构是什么样的？
+        </div>
+        <div style="align-self:flex-start;max-width:85%;padding:8px 12px;border-radius:12px 12px 12px 4px;font-size:12px;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);line-height:1.5;">
+          <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px;">AI</div>
+          Hermes Agent 采用模块化架构，核心包括：推理引擎、知识检索、工具调用、记忆管理四个主要模块...
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--border);">
+        <button style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:transparent;color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <input style="flex:1;padding:7px 10px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:12px;outline:none;font-family:inherit;" placeholder="输入消息...">
+        <button style="padding:7px 14px;background:var(--accent);border:none;border-radius:6px;color:#fff;font-size:12px;cursor:pointer;font-weight:500;font-family:inherit;">发送</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">对话球体 — 三栏布局：会话列表 + 3D球体 + 对话面板（AI-Hel 微信暗色主题）</p>
+
+<script>
+// ── Helper: platform card ──
+function pc(name, sub, envKeys, on) {
+  var cls = on ? 'tgOn' : 'tgOff';
+  var x = on ? 'translateX(18px)' : 'translateX(2px)';
+  return '<div class="pltCard">' +
+    '<div><div class="pltName">' + name + '</div><div class="pltDesc">' + sub + ' [' + envKeys + ']</div></div>' +
+    '<span class="toggleSwitch ' + cls + '" style="position:relative;flex-shrink:0;" onclick="var t=this.classList;if(t.contains(\'tgOn\')){t.remove(\'tgOn\');t.add(\'tgOff\');this.children[0].style.transform=\'translateX(2px)\'}else{t.remove(\'tgOff\');t.add(\'tgOn\');this.children[0].style.transform=\'translateX(18px)\'}">' +
+    '<span class="tgKnob" style="transform:' + x + ';"></span></span></div>';
+}
+
+// ── Helper: API key row ──
+function kr(name, envKey, hasVal) {
+  var val = hasVal ? 'sk-••••••••••••••••' : '';
+  var status = hasVal ? '<span style="font-size:10px;color:var(--accent);">已配置</span>' : '<span style="font-size:10px;color:var(--text-muted);">未配置</span>';
+  return '<div class="keyRow"><span class="provider">' + name + '</span><span style="font-size:10px;color:var(--text-muted);width:180px;flex-shrink:0;">' + envKey + '</span><input class="textInput" type="password" value="' + val + '" placeholder="输入 Key..." style="max-width:200px;">' + status + '</div>';
+}
+
+// ── Section content ──
+function accountHTML() {
+  return '<h2 class="sectionTitle">账户信息</h2>' +
+    '<div style="display:flex;align-items:flex-start;gap:24px;">' +
+    '<div style="flex-shrink:0;"><div class="avatar" title="点击更换头像"><span>张</span><div class="avatarOverlay">更换</div></div><div class="desc" style="text-align:center;">点击更换头像</div></div>' +
+    '<div style="flex:1;"><div class="fieldGroup"><label class="label">用户名</label><input class="textInput" value="张三"></div>' +
+    '<div class="fieldGroup"><label class="label">邮箱</label><input class="textInput" value="zhangsan@example.com"></div></div></div>' +
+    '<div class="fieldGroup"><label class="label">密码</label><div style="display:flex;gap:8px;"><input class="textInput" type="password" value="12345678" style="max-width:200px;"><button class="btnPrimary">修改密码</button></div></div>' +
+    '<div style="border-top:1px solid var(--border);margin:20px 0 16px;"></div><button class="btnDanger">退出登录</button>';
+}
+
+function modelHTML() {
+  return '<h2 class="sectionTitle">大模型配置</h2>' +
+    '<div class="desc" style="margin-bottom:12px;">以下模型由首次启动向导配置，与 Hermes Agent 直连。可在下方增删或修改。</div>' +
+    // Saved models — synced from first-run wizard
+    '<div class="label" style="margin-bottom:10px;">已保存的模型</div>' +
+    '<div class="card" style="display:flex;align-items:center;justify-content:space-between;border-color:rgba(7,193,96,0.2);">' +
+    '<div style="display:flex;align-items:center;gap:10px;"><span class="badge badgeGreen">当前</span><div><div style="font-size:13px;color:var(--text-primary);">Claude Sonnet 4</div><div style="font-size:10px;color:var(--text-muted);">Anthropic · claude-sonnet-4-6 · 由向导配置</div></div></div>' +
+    '<div style="display:flex;gap:4px;"><button class="btnSm btnPrimary">编辑</button><button class="btnSm btnDanger">删除</button></div></div>' +
+    '<div class="card" style="display:flex;align-items:center;justify-content:space-between;">' +
+    '<div style="display:flex;align-items:center;gap:10px;"><span class="badge badgeGray">备用</span><div><div style="font-size:13px;color:var(--text-primary);">DeepSeek V3</div><div style="font-size:10px;color:var(--text-muted);">DeepSeek · deepseek-chat · 由向导配置</div></div></div>' +
+    '<div style="display:flex;gap:4px;"><button class="btnSm btnPrimary">编辑</button><button class="btnSm btnDanger">删除</button></div></div>' +
+    '<button class="btnPrimary" style="margin-bottom:20px;font-size:11px;">+ 添加模型</button>' +
+
+    // Add model form
+    '<div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:14px;">' +
+    '<div class="label" style="margin-bottom:10px;">添加新模型</div>' +
+    '<div class="fieldGroup"><label class="label">显示名称</label><input class="textInput" placeholder="例如: 本地 Llama 3"></div>' +
+    '<div class="fieldGroup"><label class="label">提供商</label>' +
+    '<div class="pills">' +
+    '<button class="pill pillActive" onclick="selectPill(this)">Auto-detect</button>' +
+    '<button class="pill" onclick="selectPill(this)">OpenRouter</button>' +
+    '<button class="pill" onclick="selectPill(this)">Anthropic</button>' +
+    '<button class="pill" onclick="selectPill(this)">OpenAI</button>' +
+    '<button class="pill" onclick="selectPill(this)">Google AI Studio</button>' +
+    '<button class="pill" onclick="selectPill(this)">xAI (Grok)</button>' +
+    '<button class="pill" onclick="selectPill(this)">Nous Portal</button>' +
+    '<button class="pill" onclick="selectPill(this)">Qwen</button>' +
+    '<button class="pill" onclick="selectPill(this)">MiniMax</button>' +
+    '<button class="pill" onclick="selectPill(this)">Local / Custom</button>' +
+    '</div></div>' +
+    '<div class="fieldGroup"><label class="label">Model ID</label><input class="textInput" placeholder="claude-sonnet-4-6"></div>' +
+    '<div class="fieldGroup"><label class="label">Base URL</label><input class="textInput" placeholder="https://api.anthropic.com"><div class="desc">自定义 API 端点或代理地址，留空使用默认</div></div>' +
+    '</div>' +
+
+    // API Keys - LLM Providers
+    '<div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:14px;">' +
+    '<div class="label" style="margin-bottom:10px;">LLM API Key 管理</div>' +
+    kr('OpenRouter','OPENROUTER_API_KEY',false) +
+    kr('OpenAI','OPENAI_API_KEY',false) +
+    kr('Anthropic','ANTHROPIC_API_KEY',true) +
+    kr('Google AI','GOOGLE_API_KEY',false) +
+    kr('xAI (Grok)','XAI_API_KEY',false) +
+    kr('Groq','GROQ_API_KEY',false) +
+    kr('DeepSeek','DEEPSEEK_API_KEY',true) +
+    kr('Together','TOGETHER_API_KEY',false) +
+    kr('Fireworks','FIREWORKS_API_KEY',false) +
+    kr('Cerebras','CEREBRAS_API_KEY',false) +
+    kr('Mistral','MISTRAL_API_KEY',false) +
+    kr('Perplexity','PERPLEXITY_API_KEY',false) +
+    kr('GLM (智谱)','GLM_API_KEY',false) +
+    kr('Kimi (月之暗面)','KIMI_API_KEY',false) +
+    kr('MiniMax','MINIMAX_API_KEY',false) +
+    kr('MiniMax CN','MINIMAX_CN_API_KEY',false) +
+    kr('OpenCode Zen','OPENCODE_ZEN_API_KEY',false) +
+    kr('OpenCode Go','OPENCODE_GO_API_KEY',false) +
+    kr('HuggingFace','HF_TOKEN',false) +
+    kr('自定义端点','CUSTOM_API_KEY',false) +
+    '</div>' +
+
+    // API Keys - Tools
+    '<div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:14px;">' +
+    '<div class="label" style="margin-bottom:10px;">工具 API Key</div>' +
+    kr('Exa Search','EXA_API_KEY',false) +
+    kr('Parallel','PARALLEL_API_KEY',false) +
+    kr('Tavily Search','TAVILY_API_KEY',false) +
+    kr('Firecrawl','FIRECRAWL_API_KEY',false) +
+    kr('Fal AI','FAL_KEY',false) +
+    kr('Honcho','HONCHO_API_KEY',false) +
+    '</div>' +
+
+    // API Keys - Browser & Voice
+    '<div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:14px;">' +
+    '<div class="label" style="margin-bottom:10px;">浏览器 & 语音 API Key</div>' +
+    kr('BrowserBase','BROWSERBASE_API_KEY',false) +
+    kr('BrowserBase Project','BROWSERBASE_PROJECT_ID',false) +
+    kr('Voice / STT (OpenAI)','VOICE_TOOLS_OPENAI_KEY',false) +
+    '</div>' +
+
+    // API Keys - Research
+    '<div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:14px;">' +
+    '<div class="label" style="margin-bottom:10px;">研究 & 训练</div>' +
+    kr('Tinker','TINKER_API_KEY',false) +
+    kr('Weights & Biases','WANDB_API_KEY',false) +
+    '</div>' +
+
+    // Local presets
+    '<div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:14px;">' +
+    '<div class="label" style="margin-bottom:10px;">本地预设端点</div>' +
+    '<div class="pills">' +
+    '<button class="pill" onclick="selectPill(this)" title="http://localhost:1234/v1">LM Studio</button>' +
+    '<button class="pill" onclick="selectPill(this)" title="http://localhost:11434/v1">Ollama</button>' +
+    '<button class="pill" onclick="selectPill(this)" title="http://localhost:8000/v1">vLLM</button>' +
+    '<button class="pill" onclick="selectPill(this)" title="http://localhost:8080/v1">llama.cpp</button>' +
+    '</div><div class="desc">选择一个本地端点自动填充 Base URL，无需 API Key</div></div>' +
+
+    // Advanced params
+    '<div style="display:flex;gap:16px;">' +
+    '<div class="fieldGroup"><label class="label">Max Tokens</label><input class="textInput" type="number" value="4096" style="max-width:100px;"></div>' +
+    '<div class="fieldGroup"><label class="label">Temperature</label><input class="textInput" type="number" step="0.1" value="0.7" style="max-width:100px;"></div>' +
+    '<div class="fieldGroup"><label class="label">Top P</label><input class="textInput" type="number" step="0.05" value="1.0" style="max-width:100px;"></div>' +
+    '</div>';
+}
+
+function gatewayHTML() {
+  return '<h2 class="sectionTitle">网关配置</h2>' +
+    '<div class="desc" style="margin-bottom:16px;">管理消息平台的连接与配置。网关负责将 Hermes Agent 接入微信、QQ、Telegram 等消息平台，实现多平台消息收发。</div>' +
+    // Master toggle
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding:12px 16px;background:var(--bg-surface);border:1px solid rgba(7,193,96,0.15);border-radius:8px;">' +
+    '<div><div style="font-size:14px;font-weight:600;color:var(--text-primary);">消息网关</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">控制所有消息平台的连接状态</div></div>' +
+    '<div style="display:flex;align-items:center;gap:10px;">' +
+    '<span style="display:flex;align-items:center;gap:5px;font-size:12px;"><span class="svcDot on"></span><span style="color:var(--accent);">运行中</span></span>' +
+    '<button class="btnSm btnDanger" style="font-size:11px;padding:5px 14px;">停止网关</button></div></div>' +
+    '<div class="label" style="margin-bottom:10px;">消息平台 (16)</div>' +
+    '<div class="pltGrid">' +
+    pc('微信','WeChat','WEIXIN_BOT_TOKEN',true) +
+    pc('QQ','QQ Bot','QQ_BOT_TOKEN',false) +
+    pc('Telegram','Telegram Bot','TELEGRAM_BOT_TOKEN',true) +
+    pc('Discord','Discord Bot','DISCORD_BOT_TOKEN',false) +
+    pc('Slack','Slack','SLACK_BOT_TOKEN',false) +
+    pc('WhatsApp','WhatsApp','WHATSAPP_API_TOKEN',false) +
+    pc('Signal','Signal','SIGNAL_PHONE_NUMBER',false) +
+    pc('Matrix','Matrix','MATRIX_ACCESS_TOKEN',false) +
+    pc('Mattermost','Mattermost','MATTERMOST_TOKEN',false) +
+    pc('Email','Email','EMAIL_PASSWORD',false) +
+    pc('SMS','SMS / Twilio','TWILIO_AUTH_TOKEN',false) +
+    pc('iMessage','BlueBubbles','BLUEBUBBLES_PASSWORD',false) +
+    pc('钉钉','DingTalk','DINGTALK_APP_KEY',false) +
+    pc('飞书','Feishu / Lark','FEISHU_APP_ID',false) +
+    pc('企业微信','WeCom','WECOM_SECRET',true) +
+    pc('Webhooks','Webhooks','WEBHOOK_SECRET',false) +
+    pc('Home Assistant','Home Assistant','HA_TOKEN',false) +
+    '</div>' +
+    // Connection settings
+    '<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:12px;">' +
+    '<div class="fieldGroup"><label class="label">连接模式</label>' +
+    '<div class="pills"><button class="pill pillActive" onclick="selectPill(this)">本地</button><button class="pill" onclick="selectPill(this)">远程</button><button class="pill" onclick="selectPill(this)">SSH 隧道</button></div>' +
+    '<div class="desc">本地: Hermes Agent 直接运行在本机 | 远程: 连接远程服务器 | SSH: 通过 SSH 隧道连接</div></div>' +
+    '<div class="fieldGroup"><label class="label">HTTP 代理</label><input class="textInput" placeholder="http://127.0.0.1:7890" style="max-width:300px;"><div class="desc">所有外部 API 请求将通过此代理</div></div>' +
+    '</div>';
+}
+
+function themeHTML() {
+  return '<h2 class="sectionTitle">主题</h2>' +
+    '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0;color:var(--text-primary);font-size:13px;">' +
+    '<input type="radio" name="theme" checked style="accent-color:var(--accent);"> 跟随系统 <span style="color:var(--text-muted);font-size:11px;">自动切换暗色/亮色</span></label>' +
+    '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0;color:var(--text-primary);font-size:13px;">' +
+    '<input type="radio" name="theme" style="accent-color:var(--accent);"> 暗色 <span style="color:var(--text-muted);font-size:11px;">当前样式 — 暗灰底色 + 微信绿强调</span></label>' +
+    '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0;color:var(--text-primary);font-size:13px;">' +
+    '<input type="radio" name="theme" style="accent-color:var(--accent);"> 亮色 <span style="color:var(--text-muted);font-size:11px;">浅色背景 + 绿色强调</span></label>';
+}
+
+function languageHTML() {
+  return '<h2 class="sectionTitle">语言</h2><select class="select"><option>简体中文</option><option>English</option><option>日本語</option></select>';
+}
+
+function updateHTML() {
+  return '<h2 class="sectionTitle">更新</h2>' +
+    '<div class="fieldGroup"><label class="toggle" style="cursor:pointer;"><span style="color:var(--text-primary);font-size:13px;">自动检查更新</span>' +
+    '<span class="toggleSwitch tgOn" style="position:relative;" onclick="var t=this.classList;if(t.contains(\'tgOn\')){t.remove(\'tgOn\');t.add(\'tgOff\');this.children[0].style.transform=\'translateX(2px)\'}else{t.remove(\'tgOff\');t.add(\'tgOn\');this.children[0].style.transform=\'translateX(18px)\'}"><span class="tgKnob" style="transform:translateX(18px);"></span></span></label>' +
+    '<div class="desc">启动时自动检查新版本</div></div>' +
+    '<div class="fieldGroup"><div style="color:var(--text-muted);font-size:12px;margin-bottom:8px;">当前版本: 0.1.0 | 最新: 0.1.0（已是最新）</div><button class="btnPrimary">检查更新</button></div>';
+}
+
+function migrationHTML() {
+  return '<h2 class="sectionTitle">数据迁移</h2>' +
+    '<div class="desc" style="margin-bottom:16px;">导出或导入知识库、对话历史、配置等数据。</div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:16px;"><button class="btnPrimary">导出数据</button><button class="btnPrimary">导入数据</button></div>' +
+    '<div class="desc">支持格式: ZIP 归档（含 SQLite + Markdown + 配置文件）</div>' +
+    '<div style="margin-top:12px;padding:8px 12px;background:rgba(7,193,96,0.08);border-radius:4px;color:var(--accent);font-size:12px;">上次导出: 2026-05-20 | AI-Hel2-backup-2026-05-20.zip (48MB)</div>';
+}
+
+function tasksHTML() {
+  return '<h2 class="sectionTitle">定时任务</h2>' +
+    '<div class="desc" style="margin-bottom:16px;">配置自动执行的后台任务。</div>' +
+    // Task 1 - running
+    '<div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;">' +
+    '<div style="flex:1;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-size:13px;color:var(--text-primary);font-weight:500;">每日知识库重建索引</span><span class="badge badgeGreen">运行中</span></div>' +
+    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">频率: 每天 03:00 | 操作: reindex | Cron: 0 3 * * *</div>' +
+    '<div style="font-size:10px;color:var(--text-muted);">上次: 2026-05-26 03:00 (成功) | 下次: 2026-05-27 03:00</div></div>' +
+    '<div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">' +
+    '<button class="btnSm btnPrimary" style="font-size:10px;">立即触发</button>' +
+    '<button class="btnSm" style="background:rgba(255,200,60,0.1);border:1px solid rgba(240,192,64,0.25);color:#f0c040;font-size:10px;">暂停</button>' +
+    '<button class="btnSm btnDanger" style="font-size:10px;">删除</button></div></div>' +
+    // Task 2 - paused
+    '<div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;opacity:0.5;">' +
+    '<div style="flex:1;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-size:13px;color:var(--text-muted);font-weight:500;">每小时同步知识库</span><span class="badge badgeGray">已暂停</span></div>' +
+    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">频率: 每小时 | 操作: sync | Cron: 0 * * * *</div>' +
+    '<div style="font-size:10px;color:var(--text-muted);">上次: 2026-05-20 15:00 (失败: 网络超时)</div></div>' +
+    '<div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">' +
+    '<button class="btnSm btnPrimary" style="font-size:10px;">恢复</button>' +
+    '<button class="btnSm btnDanger" style="font-size:10px;">删除</button></div></div>' +
+    // Add task form
+    '<div style="border:1px solid rgba(7,193,96,0.15);border-radius:6px;padding:14px;margin-top:12px;background:var(--bg-surface);">' +
+    '<div class="label" style="margin-bottom:10px;">添加新任务</div>' +
+    '<div class="fieldGroup"><label class="label">任务名称</label><input class="textInput" placeholder="例如：每日知识库重建索引"></div>' +
+    '<div class="fieldGroup"><label class="label">频率</label><div class="pills">' +
+    '<button class="pill pillActive" onclick="selectPill(this)">每天</button>' +
+    '<button class="pill" onclick="selectPill(this)">每周</button>' +
+    '<button class="pill" onclick="selectPill(this)">每小时</button>' +
+    '<button class="pill" onclick="selectPill(this)">每 N 分钟</button>' +
+    '<button class="pill" onclick="selectPill(this)">自定义 Cron</button></div></div>' +
+    '<div style="display:flex;gap:16px;">' +
+    '<div class="fieldGroup" style="flex:1;"><label class="label">时间</label><input class="textInput" type="time" value="03:00" style="max-width:130px;"></div>' +
+    '<div class="fieldGroup" style="flex:1;"><label class="label">操作类型</label><select class="select" style="min-width:140px;"><option>重建知识索引</option><option>数据备份</option><option>同步知识库</option><option>清理旧数据</option></select></div></div>' +
+    '<div class="fieldGroup"><label class="label">Cron 表达式</label><input class="textInput" value="0 3 * * *" style="max-width:200px;font-family:JetBrains Mono,monospace;"><div class="desc">自动根据频率生成，也可手动编辑</div></div>' +
+    '<div style="display:flex;gap:8px;"><button class="btnPrimary">添加任务</button><button class="btnSm2" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);">取消</button></div></div>';
+}
+
+var sections = {
+  account: accountHTML,
+  model: modelHTML,
+  gateway: gatewayHTML,
+  theme: themeHTML,
+  language: languageHTML,
+  update: updateHTML,
+  migration: migrationHTML,
+  tasks: tasksHTML
+};
+
+function switchSettings(name, el) {
+  document.getElementById('settingsContent').innerHTML = sections[name]();
+  document.querySelectorAll('#mockupSettings .navItem').forEach(function(n){ n.classList.remove('navActive'); });
+  if (el) el.classList.add('navActive');
+}
+function selectPill(btn) {
+  var pills = btn.parentElement.querySelectorAll('.pill');
+  for (var i = 0; i < pills.length; i++) pills[i].classList.remove('pillActive');
+  btn.classList.add('pillActive');
+}
+switchSettings('account', document.querySelector('#mockupSettings .navItem'));
+</script>
+</body>
+</html>

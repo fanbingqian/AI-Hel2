@@ -1,0 +1,203 @@
+/* ── Root: flex column, no fixed background — theme controls it ── */
+.root {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Cherry host: flex fill ── */
+.host {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ── Remove focus transparent overlay box ── */
+/* Cherry's "focus" writing style creates ::before/::after overlays.
+   Also remove any CodeMirror focus ring / box-shadow that appears on click. */
+.root :global(.cherry-editor-writing-style--focus::before),
+.root :global(.cherry-editor-writing-style--focus::after) {
+  display: none !important;
+}
+.root :global(.cherry-editor .cm-editor),
+.root :global(.cherry-editor .cm-editor.cm-focused) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove active-line highlight (transparent row on click/select) */
+.root :global(.cherry-editor .cm-editor .cm-activeLine),
+.root :global(.cherry-editor .cm-editor .cm-activeLineGutter) {
+  background: transparent !important;
+}
+
+/* ── Obsidian-like theme overrides ── */
+/* Cherry's default dark theme uses orange (#oc-orange-5) for headings/primary
+   and yellow (#oc-yellow-3) for links/inline-code — too flashy.
+   These overrides shift to muted blue accent + subdued syntax colors. */
+
+/* Dark theme: editor area (Cherry toolbar + CodeMirror) */
+.root :global(.cherry.theme__dark) {
+  --primary-color: #7d8eb7;
+  --secondary-color: #2d3242;
+  --base-editor-bg: #1e1e1e;
+  --base-previewer-bg: #1e1e1e;
+  --base-font-color: #c8ccd4;
+  --editor-header-color: #7d8eb7;
+  --editor-string-color: #9ccf8f;
+  --editor-comment-color: #6c7086;
+  --editor-quote-color: #a5adbe;
+  --editor-link-color: #7d9bc7;
+  --editor-keyword-color: #c792bf;
+  --editor-v2-color: #a5adbe;
+  --editor-v3-color: #7d8eb7;
+  --editor-url-bg-color: rgba(125, 142, 183, 0.12);
+  --toolbar-bg: #252525;
+  --toolbar-btn-color: #a5adbe;
+  --toolbar-btn-hover-bg: #333;
+  --toolbar-btn-hover-color: #9db5dc;
+}
+
+/* Dark theme: preview/markdown colors */
+.root :global(.cherry-markdown.theme__dark) {
+  --md-heading-color: #e0e0e0;
+  --md-paragraph-color: #c8ccd4;
+  --md-link-color: #7d9bc7;
+  --md-link-hover-color: #9db5dc;
+  --md-inline-code-color: #e06c75;
+  --md-inline-code-bg: rgba(128, 128, 128, 0.18);
+  --md-blockquote-bg: rgba(125, 142, 183, 0.06);
+  --md-hr-border: #3a3e4a;
+  --md-table-border: #3a3e4a;
+  --base-previewer-bg: #1e1e1e;
+}
+
+/* Light theme: editor area */
+.root :global(.cherry.theme__light) {
+  --primary-color: #5b7db5;
+  --secondary-color: #e8ecf1;
+  --base-editor-bg: #ffffff;
+  --base-previewer-bg: #ffffff;
+  --base-font-color: #3a3a3a;
+  --editor-header-color: #4a6a9a;
+  --editor-string-color: #4a8a3a;
+  --editor-comment-color: #8a8a8a;
+  --editor-quote-color: #5a5a5a;
+  --editor-link-color: #5b7db5;
+  --editor-keyword-color: #8a4a9a;
+  --editor-v2-color: #5a5a5a;
+  --editor-v3-color: #5b7db5;
+  --editor-url-bg-color: rgba(91, 125, 181, 0.08);
+  --toolbar-bg: #f5f5f5;
+  --toolbar-btn-color: #5a5a5a;
+  --toolbar-btn-hover-bg: #e8ecf1;
+  --toolbar-btn-hover-color: #3a5a8c;
+}
+
+/* Light theme: preview/markdown colors */
+.root :global(.cherry-markdown.theme__light) {
+  --md-heading-color: #1e1e1e;
+  --md-paragraph-color: #3a3a3a;
+  --md-link-color: #5b7db5;
+  --md-link-hover-color: #3a5a8c;
+  --md-inline-code-color: #c7254e;
+  --md-inline-code-bg: rgba(0, 0, 0, 0.06);
+  --md-blockquote-bg: rgba(91, 125, 181, 0.04);
+  --md-hr-border: #d0d0d0;
+  --md-table-border: #d0d0d0;
+  --base-previewer-bg: #ffffff;
+}
+
+/* Toolbar button hover in dark — use blue instead of orange */
+.root :global(.cherry .cherry-toolbar-button:hover) {
+  color: #9db5dc;
+}
+
+/* Inline code — tighter padding (both themes) */
+.root :global(.cherry-markdown :not(pre) > code) {
+  padding: 0.08em 0.3em;
+  font-size: 0.9em;
+}
+
+/* Code block — rounded corners */
+.root :global(.cherry-markdown div[data-type=codeBlock]) {
+  border-radius: 6px;
+}
+
+/* Wikilink styling (for custom syntax hook output) */
+.root :global(.cherry-markdown a.wikilink) {
+  color: #7d9bc7;
+  border-bottom: 1px dashed rgba(125, 155, 199, 0.4);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
+}
+.root :global(.cherry-markdown a.wikilink:hover) {
+  color: #9db5dc;
+  border-bottom-color: #9db5dc;
+}
+
+/* ── Status bar ── */
+.statusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #2C2C2C;
+  border-top: 1px solid #3A3A3A;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #808080;
+  line-height: 22px;
+}
+
+.filePath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+}
+
+.statusRight { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.dirtyDot { color: #f59e0b; font-size: 10px; }
+
+.saveBtn {
+  padding: 0 8px;
+  border: 1px solid #3A3A3A;
+  border-radius: 3px;
+  background: transparent;
+  color: #b3b3b3;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  line-height: 18px;
+}
+.saveBtn:hover:not(:disabled) { border-color: #4a7cf7; color: #89b4fa; }
+.saveBtn:disabled { opacity: 0.4; cursor: default; }
+
+.modeBtn, .themeBtn {
+  padding: 0 8px;
+  border: 1px solid #3A3A3A;
+  border-radius: 3px;
+  background: transparent;
+  color: #b3b3b3;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  line-height: 18px;
+}
+.modeBtn:hover, .themeBtn:hover { border-color: #4a7cf7; color: #89b4fa; }
+
+/* ── Overlays ── */
+.error {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  color: #ef4444; font-size: 13px; background: #1e1e1e;
+}
+.loading {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  color: #808080; font-size: 13px; background: #1e1e1e;
+}

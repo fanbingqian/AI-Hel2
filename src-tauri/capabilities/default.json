@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicholasio/capabilities-schema/main/schema.json",
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "dialog:default",
+    "notification:default",
+    "global-shortcut:default"
+  ]
+}
