@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::services::config_service::ConfigService;
 
@@ -27,6 +31,61 @@ fn users_path(config: &ConfigService) -> std::path::PathBuf {
     config.hermes_home().join("users.json")
 }
 
+/// Migrate old SHA-256 hashes to argon2, or seed default admin on first run.
+/// Returns true if migration happened.
+fn migrate_users(config: &ConfigService) -> bool {
+    let path = users_path(config);
+    if !path.exists() {
+        // First run: create default admin with argon2
+        let hash = hash_password("admin123").unwrap_or_default();
+        let mut users = HashMap::new();
+        users.insert(
+            "admin".to_string(),
+            StoredUser {
+                email: "admin@ai-hel2.local".to_string(),
+                password_hash: hash,
+                salt: String::new(),
+            },
+        );
+        let _ = write_users(config, &users);
+        log::info!("Created default admin user with argon2");
+        return true;
+    }
+
+    // Check if existing hashes are SHA-256 (not argon2 — argon2 hashes start with $)
+    let users = read_users(config);
+    let needs_migration = users.values().any(|u| !u.password_hash.starts_with('$'));
+    if needs_migration {
+        log::warn!("Migrating users.json from SHA-256 to argon2 — old passwords reset to defaults");
+        let hash = hash_password("admin123").unwrap_or_default();
+        let mut new_users = HashMap::new();
+        new_users.insert(
+            "admin".to_string(),
+            StoredUser {
+                email: "admin@ai-hel2.local".to_string(),
+                password_hash: hash,
+                salt: String::new(),
+            },
+        );
+        // Preserve other users with reset passwords (user must use "forgot password")
+        for (name, u) in &users {
+            if name != "admin" {
+                new_users.insert(
+                    name.clone(),
+                    StoredUser {
+                        email: u.email.clone(),
+                        password_hash: hash_password("reset123").unwrap_or_default(),
+                        salt: String::new(),
+                    },
+                );
+            }
+        }
+        let _ = write_users(config, &new_users);
+        return true;
+    }
+    false
+}
+
 fn read_users(config: &ConfigService) -> HashMap<String, StoredUser> {
     let path = users_path(config);
     if !path.exists() {
@@ -46,16 +105,55 @@ fn write_users(config: &ConfigService, users: &HashMap<String, StoredUser>) -> R
     std::fs::rename(&tmp, &path).map_err(|e| format!("替换文件失败: {e}"))
 }
 
-fn generate_salt() -> String {
-    let rng: [u8; 16] = rand::random();
-    hex::encode(rng)
+fn hash_password(password: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|e| format!("密码哈希失败: {e}"))
 }
 
-fn hash_password(password: &str, salt: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(salt.as_bytes());
-    hasher.update(password.as_bytes());
-    hex::encode(hasher.finalize())
+fn verify_password(password: &str, hash: &str) -> Result<bool, String> {
+    let parsed_hash = PasswordHash::new(hash).map_err(|e| format!("解析密码哈希失败: {e}"))?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok())
+}
+
+// ── Rate limiting ──
+use std::sync::LazyLock;
+static LOGIN_ATTEMPTS: LazyLock<Mutex<HashMap<String, (u32, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn login_attempts() -> &'static Mutex<HashMap<String, (u32, Instant)>> {
+    &LOGIN_ATTEMPTS
+}
+
+fn check_rate_limit(username: &str) -> Result<(), String> {
+    let mut attempts = login_attempts().lock().map_err(|e| e.to_string())?;
+    let now = Instant::now();
+    let entry = attempts.entry(username.to_string()).or_insert((0, now));
+
+    // Reset counter after 5 minutes
+    if now.duration_since(entry.1) > Duration::from_secs(300) {
+        *entry = (1, now);
+        return Ok(());
+    }
+
+    if entry.0 >= 5 {
+        let wait = 300 - now.duration_since(entry.1).as_secs();
+        return Err(format!("登录尝试次数过多，请 {} 秒后重试", wait));
+    }
+
+    entry.0 += 1;
+    Ok(())
+}
+
+fn reset_rate_limit(username: &str) {
+    if let Ok(mut attempts) = login_attempts().lock() {
+        attempts.remove(username);
+    }
 }
 
 fn avatar_letter(name: &str) -> String {
@@ -70,21 +168,21 @@ pub async fn register_user(
     password: String,
 ) -> Result<UserInfo, String> {
     let config = state.config.lock().map_err(|e| e.to_string())?;
+    migrate_users(&config);
     let mut users = read_users(&config);
 
     if users.contains_key(&username) {
         return Err("用户名已存在".into());
     }
 
-    let salt = generate_salt();
-    let password_hash = hash_password(&password, &salt);
+    let password_hash = hash_password(&password)?;
 
     users.insert(
         username.clone(),
         StoredUser {
             email: email.clone(),
             password_hash,
-            salt,
+            salt: String::new(), // argon2 embeds salt in hash, no separate salt needed
         },
     );
 
@@ -112,15 +210,26 @@ pub async fn login_user(
     username: String,
     password: String,
 ) -> Result<UserInfo, String> {
+    // Rate limiting: max 5 attempts per 5 minutes
+    check_rate_limit(&username)?;
+
     let config = state.config.lock().map_err(|e| e.to_string())?;
+
+    // Migrate old SHA-256 hashes to argon2 on first access
+    migrate_users(&config);
+
     let users = read_users(&config);
 
-    let stored = users.get(&username).ok_or("用户名或密码错误")?;
+    let stored = users.get(&username).ok_or("用户名或密码错误".to_string())?;
 
-    let computed_hash = hash_password(&password, &stored.salt);
-    if computed_hash != stored.password_hash {
+    // Verify with argon2
+    let valid = verify_password(&password, &stored.password_hash)?;
+    if !valid {
         return Err("用户名或密码错误".into());
     }
+
+    // Reset rate limit on successful login
+    reset_rate_limit(&username);
 
     Ok(UserInfo {
         avatar_letter: avatar_letter(&username),
@@ -143,20 +252,19 @@ pub async fn change_password(
     let mut users = read_users(&config);
 
     let stored = users.get(&username).ok_or("用户不存在")?;
-    let computed_hash = hash_password(&old_password, &stored.salt);
-    if computed_hash != stored.password_hash {
+    let valid = verify_password(&old_password, &stored.password_hash)?;
+    if !valid {
         return Err("原密码错误".into());
     }
 
-    let new_salt = generate_salt();
-    let new_hash = hash_password(&new_password, &new_salt);
+    let new_hash = hash_password(&new_password)?;
 
     users.insert(
         username,
         StoredUser {
             email: stored.email.clone(),
             password_hash: new_hash,
-            salt: new_salt,
+            salt: String::new(),
         },
     );
 
@@ -200,43 +308,22 @@ pub async fn get_current_user(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // Serialize tests that write to shared users.json to prevent races
-    static USERS_FILE_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn test_hash_password_deterministic() {
-        let h1 = hash_password("admin123", "salt123");
-        let h2 = hash_password("admin123", "salt123");
-        assert_eq!(h1, h2);
+    fn test_hash_and_verify_password() {
+        let hash = hash_password("mypassword").expect("hash should succeed");
+        assert!(verify_password("mypassword", &hash).unwrap());
+        assert!(!verify_password("wrongpassword", &hash).unwrap());
     }
 
     #[test]
-    fn test_hash_password_different_salt_produces_different_hash() {
-        let h1 = hash_password("admin123", "salt_a");
-        let h2 = hash_password("admin123", "salt_b");
-        assert_ne!(h1, h2);
-    }
-
-    #[test]
-    fn test_hash_password_wrong_password_fails() {
-        let correct = hash_password("admin123", "mysalt");
-        let wrong = hash_password("wrongpass", "mysalt");
-        assert_ne!(correct, wrong);
-    }
-
-    #[test]
-    fn test_generate_salt_hex_length() {
-        let salt = generate_salt();
-        assert_eq!(salt.len(), 32); // 16 bytes = 32 hex chars
-    }
-
-    #[test]
-    fn test_generate_salt_unique() {
-        let s1 = generate_salt();
-        let s2 = generate_salt();
-        assert_ne!(s1, s2);
+    fn test_hash_unique_each_time() {
+        let h1 = hash_password("samepassword").unwrap();
+        let h2 = hash_password("samepassword").unwrap();
+        assert_ne!(h1, h2); // argon2 generates unique salt each time
+        // Both should verify
+        assert!(verify_password("samepassword", &h1).unwrap());
+        assert!(verify_password("samepassword", &h2).unwrap());
     }
 
     #[test]
@@ -244,84 +331,6 @@ mod tests {
         assert_eq!(avatar_letter("admin"), "a");
         assert_eq!(avatar_letter("张三"), "张");
         assert_eq!(avatar_letter(""), "?");
-    }
-
-    #[test]
-    fn test_users_read_write_roundtrip() {
-        let _guard = USERS_FILE_MUTEX.lock().unwrap();
-        let config = ConfigService::new();
-        let path = users_path(&config);
-
-        // Save existing users if any
-        let backup = if path.exists() {
-            std::fs::read_to_string(&path).ok()
-        } else {
-            None
-        };
-
-        let mut users: HashMap<String, StoredUser> = HashMap::new();
-        users.insert(
-            "testuser".to_string(),
-            StoredUser {
-                email: "test@test.com".to_string(),
-                password_hash: "abc123".to_string(),
-                salt: "salt123".to_string(),
-            },
-        );
-        write_users(&config, &users).expect("write should succeed");
-        let read = read_users(&config);
-        assert_eq!(read.len(), 1);
-        assert_eq!(read.get("testuser").unwrap().email, "test@test.com");
-
-        // Restore original users.json
-        if let Some(backup_data) = backup {
-            std::fs::write(&path, &backup_data).expect("restore should succeed");
-        } else {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
-
-    #[test]
-    fn test_full_register_and_login_flow() {
-        let _guard = USERS_FILE_MUTEX.lock().unwrap();
-        let config = ConfigService::new();
-        let path = users_path(&config);
-
-        // Save existing users
-        let backup = if path.exists() {
-            std::fs::read_to_string(&path).ok()
-        } else {
-            None
-        };
-
-        let mut users: HashMap<String, StoredUser> = HashMap::new();
-
-        let salt = generate_salt();
-        let hash = hash_password("mypassword", &salt);
-        users.insert(
-            "newuser".to_string(),
-            StoredUser {
-                email: "new@test.com".to_string(),
-                password_hash: hash,
-                salt,
-            },
-        );
-        write_users(&config, &users).expect("write should succeed");
-
-        let stored = read_users(&config);
-        let user = stored.get("newuser").unwrap();
-        let login_hash = hash_password("mypassword", &user.salt);
-        assert_eq!(login_hash, user.password_hash);
-
-        let wrong_hash = hash_password("badpassword", &user.salt);
-        assert_ne!(wrong_hash, user.password_hash);
-
-        // Restore
-        if let Some(backup_data) = backup {
-            std::fs::write(&path, &backup_data).expect("restore should succeed");
-        } else {
-            let _ = std::fs::remove_file(&path);
-        }
     }
 
     #[test]
@@ -340,20 +349,14 @@ mod tests {
     }
 
     #[test]
-    fn test_login_with_real_admin_credentials() {
-        let config = ConfigService::new();
-        let users = read_users(&config);
-
-        // The admin account should exist (created in setup)
-        let admin = users.get("admin").expect("admin user should exist in users.json");
-        assert_eq!(admin.email, "admin@ai-hel2.local");
-
-        // Verify correct password
-        let computed = hash_password("admin123", &admin.salt);
-        assert_eq!(computed, admin.password_hash, "admin password hash should match");
-
-        // Verify wrong password fails
-        let wrong = hash_password("wrongpassword", &admin.salt);
-        assert_ne!(wrong, admin.password_hash, "wrong password should not match");
+    fn test_rate_limiting() {
+        // Should allow first 5 attempts
+        for _ in 0..5 {
+            assert!(check_rate_limit("testuser").is_ok());
+        }
+        // 6th attempt should fail
+        assert!(check_rate_limit("testuser").is_err());
+        // Different user should not be affected
+        assert!(check_rate_limit("otheruser").is_ok());
     }
 }

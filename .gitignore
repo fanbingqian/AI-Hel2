@@ -1,6 +1,7 @@
 node_modules/
 dist/
 src-tauri/target/
+src-tauri/hermes-agent/
 *.log
 logs/
 .env
@@ -8,9 +9,12 @@ knowledge_cache.db
 sessions/
 gateway-stderr.log
 nexus_port
+users.json
+state.db
 .DS_Store
 Thumbs.db
 *.pyc
 __pycache__/
 .venv/
 models/
+*.exe

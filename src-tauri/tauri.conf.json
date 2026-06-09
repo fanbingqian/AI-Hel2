@@ -19,7 +19,9 @@
         "minHeight": 500,
         "center": true,
         "resizable": true,
-        "decorations": true
+        "decorations": false,
+        "transparent": true,
+        "shadow": false
       }
     ],
     "security": {
@@ -28,13 +30,47 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "hermes-agent/*.py",
+      "hermes-agent/*.toml",
+      "hermes-agent/hermes_cli/*.py",
+      "hermes-agent/agent/*.py",
+      "hermes-agent/agent/**/*.py",
+      "hermes-agent/tools/*.py",
+      "hermes-agent/tools/**/*.py",
+      "hermes-agent/providers/*.py",
+      "hermes-agent/heimdall/*.py",
+      "hermes-agent/heimdall/**/*.py",
+      "hermes-agent/gateway/*.py",
+      "hermes-agent/cron/*.py",
+      "hermes-agent/plugins/*.py",
+      "hermes-agent/plugins/**/*.py",
+      "hermes-agent/skills/**/*.md",
+      "hermes-agent/skills/**/*.py",
+      "hermes-agent/optional-skills/**/*.md",
+      "hermes-agent/optional-skills/**/*.py",
+      "hermes-agent/acp_adapter/*.py",
+      "hermes-agent/venv/**/*",
+      "hermes-agent/python/*.exe",
+      "hermes-agent/python/*.dll",
+      "hermes-agent/python/*.pyd",
+      "hermes-agent/python/*.cat",
+      "hermes-agent/python/*.zip",
+      "hermes-agent/python/*._pth",
+      "hermes-agent/python/Lib/**/*"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
