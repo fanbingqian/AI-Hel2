@@ -111,6 +111,40 @@ export function ChatPanel() {
     return () => document.removeEventListener("keydown", handleKey);
   }, [toggleInputMode]);
 
+  // Right Alt PTT (push-to-talk): hold to record, release to transcribe
+  useEffect(() => {
+    const altRightDownRef = { current: false };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only Right Alt (not left), ignore key-repeat, ignore if AltGr composing
+      if (e.code !== "AltRight" || e.repeat || e.getModifierState("AltGraph")) return;
+      e.preventDefault();
+      if (altRightDownRef.current) return;
+      altRightDownRef.current = true;
+      const { status } = useVoiceStore.getState();
+      if (status === "idle") {
+        useVoiceStore.getState().startRecording("chat");
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== "AltRight") return;
+      e.preventDefault();
+      altRightDownRef.current = false;
+      const { status } = useVoiceStore.getState();
+      if (status === "listening") {
+        useVoiceStore.getState().stopRecording();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keyup", handleKeyUp);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
   const handleSend = () => {
     const text = input.trim();
     if (!text || isLoading) return;
@@ -175,7 +209,7 @@ export function ChatPanel() {
       </div>
 
       <div className={`${styles.inputBar} ${isVoiceActive ? styles.inputBarListening : ""}`}>
-        {isVoiceMode ? (
+        {isVoiceMode || isVoiceActive ? (
           <VoiceInput />
         ) : (
           <textarea
@@ -183,7 +217,7 @@ export function ChatPanel() {
             id="chat-input"
             name="message"
             className={styles.textInput}
-            placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+            placeholder="输入消息... (Enter 发送, 右Alt 按住说话)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -239,7 +273,7 @@ export function ChatPanel() {
               type="button"
               className={`${styles.inputTool} ${isVoiceMode ? styles.inputToolActive : ""}`}
               onClick={toggleInputMode}
-              title={isVoiceMode ? "切换到文字输入 (Ctrl+Space)" : "切换到语音输入 (Ctrl+Space)"}
+              title={isVoiceMode ? "切换到文字输入 (Ctrl+Space)" : "切换到语音输入 (Ctrl+Space，右Alt 按住说话)"}
             >
               {isVoiceMode ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -276,7 +310,7 @@ export function ChatPanel() {
               </svg>
             </button>
           </div>
-          {isVoiceMode ? (
+          {(isVoiceMode || isVoiceActive) ? (
             isVoiceActive && (
               <button className={styles.sendBtn} onClick={() => useVoiceStore.getState().cancelRecording()} style={{ background: "#e74c3c" }}>
                 取消

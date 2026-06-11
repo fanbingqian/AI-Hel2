@@ -82,14 +82,18 @@ function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Main model
   const [baseUrl, setBaseUrl] = useState(agent.base_url);
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<string[]>([...agent.models]);
+  // Vision model
+  const [visionBaseUrl, setVisionBaseUrl] = useState(agent.vision_base_url || "");
+  const [visionApiKey, setVisionApiKey] = useState("");
   const [visionModels, setVisionModels] = useState<string[]>([...agent.vision_models]);
+  // Reasoning model
+  const [reasoningBaseUrl, setReasoningBaseUrl] = useState(agent.reasoning_base_url || "");
+  const [reasoningApiKey, setReasoningApiKey] = useState("");
   const [reasoningModels, setReasoningModels] = useState<string[]>([...agent.reasoning_models]);
-  const [newModel, setNewModel] = useState("");
-  const [newVisionModel, setNewVisionModel] = useState("");
-  const [newReasoningModel, setNewReasoningModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
@@ -99,17 +103,6 @@ function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
   const statusLabel = agent.status === "Running" ? "运行中" : agent.status === "Detected" ? "已检测" : "离线";
   const typeLabel = agent.agent_type === "hermes_builtin" ? "内置服务" : agent.agent_type === "openclaw" ? "OpenClaw" : "OpenAI 兼容";
 
-  const handleAddModel = (m: string) => {
-    if (m && !models.includes(m)) {
-      setModels([...models, m]);
-    }
-    setNewModel("");
-  };
-
-  const handleRemoveModel = (m: string) => {
-    setModels(models.filter((x) => x !== m));
-  };
-
   const handleSave = async () => {
     setSaving(true);
     setSaveMsg(null);
@@ -117,11 +110,23 @@ function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
       await invoke("update_agent_config", {
         id: agent.id,
         baseUrl: baseUrl || null,
-        apiKey: apiKey ? apiKey : null,
+        apiKey: apiKey || null,
         models,
         visionModels: visionModels,
         reasoningModels: reasoningModels,
+        visionBaseUrl: visionBaseUrl || null,
+        visionApiKey: visionApiKey || null,
+        reasoningBaseUrl: reasoningBaseUrl || null,
+        reasoningApiKey: reasoningApiKey || null,
       });
+      // Write API keys to .env
+      const writeKey = async (url: string, key: string) => {
+        const p = PROVIDER_PRESETS.find(x => x.url === url);
+        if (p && key) await invoke("update_api_key", { provider: p.id, apiKey: key });
+      };
+      await writeKey(baseUrl, apiKey);
+      await writeKey(visionBaseUrl, visionApiKey);
+      await writeKey(reasoningBaseUrl, reasoningApiKey);
       setSaveMsg("ok");
       onRefresh();
     } catch (e: any) {
@@ -164,103 +169,24 @@ function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
 
       {expanded && (
         <div className={styles.rowBody}>
-          <div className={styles.configGrid}>
-            <label className={styles.configField}>
-              <span>Base URL</span>
-              <input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="http://127.0.0.1:8080/v1"
-              />
-            </label>
-            <label className={styles.configField}>
-              <span>API Key</span>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="留空保持原有 key 不变"
-              />
-            </label>
-          </div>
-
-          <div className={styles.modelSection}>
-            <span className={styles.modelLabel}>主大模型</span>
-            <div className={styles.modelTags}>
-              {models.map((m) => (
-                <span key={m} className={styles.modelTag}>
-                  {m}
-                  <button type="button" className={styles.modelRemove} onClick={() => handleRemoveModel(m)}>&times;</button>
-                </span>
-              ))}
-            </div>
-            <div className={styles.addModelRow}>
-              <input
-                className={styles.addModelInput}
-                value={newModel}
-                onChange={(e) => setNewModel(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddModel(newModel); }}
-                placeholder="输入或选择模型名称..."
-                list="modelSuggestions"
-              />
-              <datalist id="modelSuggestions">
-                {MODEL_SUGGESTIONS.map((m) => (<option key={m} value={m} />))}
-              </datalist>
-              <button type="button" className={styles.btnSmall} onClick={() => handleAddModel(newModel)}>+ 添加</button>
-            </div>
-          </div>
-
-          <div className={styles.modelSection}>
-            <span className={styles.modelLabel}>视觉大模型</span>
-            <div className={styles.modelTags}>
-              {visionModels.map((m) => (
-                <span key={m} className={styles.modelTag}>
-                  {m}
-                  <button type="button" className={styles.modelRemove} onClick={() => setVisionModels(visionModels.filter((x) => x !== m))}>&times;</button>
-                </span>
-              ))}
-            </div>
-            <div className={styles.addModelRow}>
-              <input
-                className={styles.addModelInput}
-                value={newVisionModel}
-                onChange={(e) => setNewVisionModel(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { const m = newVisionModel; if (m && !visionModels.includes(m)) { setVisionModels([...visionModels, m]); } setNewVisionModel(""); } }}
-                placeholder="输入视觉模型名称..."
-                list="visionModelSuggestions"
-              />
-              <datalist id="visionModelSuggestions">
-                {MODEL_SUGGESTIONS.map((m) => (<option key={m} value={m} />))}
-              </datalist>
-              <button type="button" className={styles.btnSmall} onClick={() => { const m = newVisionModel; if (m && !visionModels.includes(m)) { setVisionModels([...visionModels, m]); } setNewVisionModel(""); }}>+ 添加</button>
-            </div>
-          </div>
-
-          <div className={styles.modelSection}>
-            <span className={styles.modelLabel}>推理大模型</span>
-            <div className={styles.modelTags}>
-              {reasoningModels.map((m) => (
-                <span key={m} className={styles.modelTag}>
-                  {m}
-                  <button type="button" className={styles.modelRemove} onClick={() => setReasoningModels(reasoningModels.filter((x) => x !== m))}>&times;</button>
-                </span>
-              ))}
-            </div>
-            <div className={styles.addModelRow}>
-              <input
-                className={styles.addModelInput}
-                value={newReasoningModel}
-                onChange={(e) => setNewReasoningModel(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { const m = newReasoningModel; if (m && !reasoningModels.includes(m)) { setReasoningModels([...reasoningModels, m]); } setNewReasoningModel(""); } }}
-                placeholder="输入推理模型名称..."
-                list="reasoningModelSuggestions"
-              />
-              <datalist id="reasoningModelSuggestions">
-                {MODEL_SUGGESTIONS.map((m) => (<option key={m} value={m} />))}
-              </datalist>
-              <button type="button" className={styles.btnSmall} onClick={() => { const m = newReasoningModel; if (m && !reasoningModels.includes(m)) { setReasoningModels([...reasoningModels, m]); } setNewReasoningModel(""); }}>+ 添加</button>
-            </div>
-          </div>
+          <ProviderModelRow
+            label="主大模型"
+            baseUrl={baseUrl} onBaseUrlChange={setBaseUrl}
+            apiKey={apiKey} onApiKeyChange={setApiKey}
+            models={models} onModelsChange={(v) => setModels(v ? [v] : [])}
+          />
+          <ProviderModelRow
+            label="视觉大模型" optional
+            baseUrl={visionBaseUrl} onBaseUrlChange={setVisionBaseUrl}
+            apiKey={visionApiKey} onApiKeyChange={setVisionApiKey}
+            models={visionModels} onModelsChange={(v) => setVisionModels(v ? [v] : [])}
+          />
+          <ProviderModelRow
+            label="推理大模型" optional
+            baseUrl={reasoningBaseUrl} onBaseUrlChange={setReasoningBaseUrl}
+            apiKey={reasoningApiKey} onApiKeyChange={setReasoningApiKey}
+            models={reasoningModels} onModelsChange={(v) => setReasoningModels(v ? [v] : [])}
+          />
 
           <div className={styles.saveRow}>
             {saveMsg && (
@@ -278,16 +204,92 @@ function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
   );
 }
 
+// Provider presets matching Hermes Agent config.yaml format.
+// IMPORTANT: api_base does NOT include /v1 — Hermes auto-appends it for api_type:"openai".
+// See: https://github.com/NousResearch/hermes-agent
+function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, onApiKeyChange, models, onModelsChange }: {
+  label: string; optional?: boolean;
+  baseUrl: string; onBaseUrlChange: (v: string) => void;
+  apiKey: string; onApiKeyChange: (v: string) => void;
+  models: string[]; onModelsChange: (v: string) => void;
+}) {
+  const preset = PROVIDER_PRESETS.find(p => p.url === baseUrl);
+  const availModels = preset?.models || models;
+  const selModel = models[0] || "";
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "checking" | "ok" | "err">("idle");
+  const [verifyMsg, setVerifyMsg] = useState("");
+
+  const handleVerify = async () => {
+    if (!baseUrl || !apiKey || !selModel) return;
+    setVerifyStatus("checking"); setVerifyMsg("");
+    try {
+      const msg = await invoke<string>("verify_api_key", { baseUrl, apiKey, model: selModel });
+      setVerifyStatus("ok"); setVerifyMsg(msg);
+    } catch (e: any) {
+      setVerifyStatus("err"); setVerifyMsg(typeof e === "string" ? e : e?.message || "验证失败");
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 12, padding: "8px 10px", background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.05)" }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: "#07c160", marginBottom: 6, display: "block" }}>
+        {label}{optional ? "（可选，留空不用）" : ""}
+      </span>
+      <div className={styles.configGrid}>
+        <label className={styles.configField}>
+          <span>提供商</span>
+          <select value={baseUrl} onChange={(e) => {
+            const p = PROVIDER_PRESETS.find(x => x.url === e.target.value);
+            onBaseUrlChange(e.target.value || "");
+            if (p?.models?.length) onModelsChange(p.models[0]);
+          }}>
+            <option value="">{optional ? "不使用" : "自定义"}</option>
+            {PROVIDER_PRESETS.filter(x => x.id).map(p => (
+              <option key={p.id} value={p.url}>{p.label} — {p.url}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.configField}>
+          <span>API Key</span>
+          <input type="password" value={apiKey} onChange={(e) => onApiKeyChange(e.target.value)} placeholder="sk-..." />
+        </label>
+      </div>
+      <div>
+        <span style={{ fontSize: 11, color: "#b3b3b3", marginBottom: 3, display: "block" }}>模型</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ flex: 1 }}>
+            <select value={selModel} onChange={(e) => onModelsChange(e.target.value)}
+              style={{ width: "100%", padding: "5px 8px", background: "#252525", border: "1px solid #444", borderRadius: 6, color: "#e0e0e0", fontSize: 13 }}>
+              <option value="">{optional ? "不使用" : "选择模型..."}</option>
+              {availModels.map(m => <option key={m} value={m}>{m}</option>)}
+              {selModel && !availModels.includes(selModel) && <option value={selModel}>{selModel}</option>}
+            </select>
+          </div>
+          <button type="button" className={styles.verifyBtn} onClick={handleVerify} disabled={verifyStatus === "checking" || !baseUrl || !apiKey || !selModel}>
+            {verifyStatus === "checking" ? "验证中..." : "验证"}
+          </button>
+        </div>
+        {verifyMsg && <div className={verifyStatus === "ok" ? styles.verifyOk : styles.verifyErr}>{verifyMsg}</div>}
+      </div>
+    </div>
+  );
+}
+
 const PROVIDER_PRESETS = [
   { label: "自定义", id: "", name: "", url: "", models: [] as string[], visionModels: [] as string[], reasoningModels: [] as string[], type: "openai_compatible" },
-  { label: "DeepSeek", id: "deepseek", name: "DeepSeek", url: "https://api.deepseek.com/v1", models: ["deepseek-chat"], visionModels: [], reasoningModels: ["deepseek-reasoner"], type: "openai_compatible" },
-  { label: "OpenAI", id: "openai", name: "OpenAI", url: "https://api.openai.com/v1", models: ["gpt-4o", "gpt-4o-mini"], visionModels: ["gpt-4o"], reasoningModels: ["o3-mini"], type: "openai_compatible" },
-  { label: "Anthropic", id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", models: ["claude-sonnet-4-6", "claude-opus-4-7"], visionModels: ["claude-sonnet-4-6"], reasoningModels: [], type: "openai_compatible" },
-  { label: "Groq", id: "groq", name: "Groq", url: "https://api.groq.com/openai/v1", models: ["llama-3.3-70b", "mixtral-8x7b"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
-  { label: "Together AI", id: "together", name: "Together AI", url: "https://api.together.xyz/v1", models: ["meta-llama/Llama-3.3-70B-Instruct-Turbo"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
-  { label: "Ollama (本地)", id: "ollama", name: "Ollama", url: "http://localhost:11434/v1", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
-  { label: "LM Studio (本地)", id: "lmstudio", name: "LM Studio", url: "http://localhost:1234/v1", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "DeepSeek", id: "deepseek", name: "DeepSeek", url: "https://api.deepseek.com", models: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"], visionModels: [], reasoningModels: ["deepseek-reasoner"], type: "openai_compatible" },
+  { label: "AIGoCode", id: "aigocode", name: "AIGoCode", url: "https://api.aigocode.com", models: ["gpt-5.4", "claude-sonnet-4-6", "gemini-3.5-flash"], visionModels: ["gpt-5.4"], reasoningModels: [], type: "openai_compatible" },
+  { label: "OpenAI", id: "openai", name: "OpenAI", url: "https://api.openai.com", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"], visionModels: ["gpt-4o"], reasoningModels: ["o3-mini"], type: "openai_compatible" },
+  { label: "Anthropic", id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com", models: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"], visionModels: ["claude-sonnet-4-6"], reasoningModels: [], type: "openai_compatible" },
+  { label: "Google AI", id: "google", name: "Google AI", url: "https://generativelanguage.googleapis.com", models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3.5-flash"], visionModels: ["gemini-2.5-flash"], reasoningModels: [], type: "openai_compatible" },
+  { label: "xAI Grok", id: "xai", name: "xAI", url: "https://api.x.ai", models: ["grok-3"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "Groq", id: "groq", name: "Groq", url: "https://api.groq.com/openai", models: ["llama-4-maverick", "llama-3.3-70b", "mixtral-8x7b"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "OpenRouter", id: "openrouter", name: "OpenRouter", url: "https://openrouter.ai/api", models: ["openai/gpt-4o", "anthropic/claude-sonnet-4-6"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "Ollama (本地)", id: "ollama", name: "Ollama", url: "http://localhost:11434", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "LM Studio (本地)", id: "lmstudio", name: "LM Studio", url: "http://localhost:1234", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
 ];
+
+// Keep existing MODEL_SUGGESTIONS for backward compatibility, but presets take priority
 
 function AddAgentDialog({ onClose, onAdd }: {
   onClose: () => void;

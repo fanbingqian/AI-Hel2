@@ -102,7 +102,7 @@ impl ConfigService {
     pub fn read_nexus_config(&self) -> Result<serde_json::Value, String> {
         let config_path = self.hermes_home.join("config.yaml");
         if !config_path.exists() {
-            return Ok(serde_json::json!({"llm_mode": "follow_agent"}));
+            return Ok(serde_json::json!({"llm_mode": "custom"}));
         }
         let content = std::fs::read_to_string(&config_path)
             .map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
@@ -111,7 +111,7 @@ impl ConfigService {
             .map_err(|e| format!("解析 config.yaml 失败: {e}"))?;
         let nexus = value.get("nexus")
             .map(|n| serde_json::to_value(n).unwrap_or_default())
-            .unwrap_or_else(|| serde_json::json!({"llm_mode": "follow_agent"}));
+            .unwrap_or_else(|| serde_json::json!({"llm_mode": "custom"}));
         Ok(nexus)
     }
 
@@ -168,27 +168,26 @@ impl ConfigService {
             ];
 
             // When using Hermes builtin agent, route Nexus LLM calls through Hermes
-            // (Hermes accepts any model name and routes to the correct backend)
             if model_config.model.provider == "hermes-builtin" {
                 vars.push(("NEXUS_LLM_PROVIDER".into(), "hermes_builtin".into()));
                 vars.push(("NEXUS_LLM_MODEL".into(), model_config.model.name.clone()));
                 vars.push(("NEXUS_LLM_BASE_URL".into(), "http://127.0.0.1:18642/v1".into()));
-                // Hermes does not require API key for local connections
                 return vars;
             }
 
             // Pass provider-specific keys from .env
             let env = self.read_env();
             let mut provider = String::new();
+            let mut api_key_val = String::new();
             for (key, val) in &env {
                 if key.ends_with("_API_KEY") && !val.is_empty() {
                     provider = key.trim_end_matches("_API_KEY").to_lowercase();
+                    api_key_val = val.clone();
                     vars.push(("NEXUS_LLM_PROVIDER".into(), provider.clone()));
-                    vars.push((key.clone(), val.clone()));
-                    break; // Use first available key
+                    vars.push(("NEXUS_LLM_API_KEY".into(), api_key_val));
+                    break;
                 }
             }
-            // Always include model name (provider-aware fallback)
             let model_name = if model_config.model.name.is_empty() {
                 match provider.as_str() {
                     "deepseek" => "deepseek-v4-pro".to_string(),

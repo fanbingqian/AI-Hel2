@@ -62,10 +62,35 @@ export function MessageBubble({ message }: Props) {
     if (saving || saved || !message.content) return;
     setSaving(true);
     try {
-      const title = message.content.slice(0, 50).replace(/\n/g, " ");
-      // sessionTitle → body text, messagesJson → document title
-      await saveChatToKnowledge(message.content, title);
+      // Extract a meaningful title from the content:
+      // 1. First Markdown heading (# Title)
+      // 2. First non-empty meaningful line (at least 8 chars)
+      // 3. Fallback to first 40 chars
+      const lines = message.content.split("\n");
+      let title = "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("# ") && trimmed.length > 3) {
+          title = trimmed.replace(/^#+\s*/, "").slice(0, 60);
+          break;
+        }
+      }
+      if (!title) {
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.length >= 8 && !trimmed.startsWith("```") && !trimmed.startsWith("- ") && !trimmed.match(/^\d+\./)) {
+            title = trimmed.slice(0, 60);
+            break;
+          }
+        }
+      }
+      if (!title) {
+        title = message.content.replace(/\n/g, " ").slice(0, 40);
+      }
+      const result: any = await saveChatToKnowledge(message.content, title);
       setSaved(true);
+      // Show extraction count to user via alert or we can skip
+      console.log(`Saved: ${title}, entities: ${result?.new_count || 0}`);
     } catch (e) {
       console.error("Save to knowledge failed:", e);
     } finally {

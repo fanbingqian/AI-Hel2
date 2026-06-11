@@ -13,6 +13,6 @@ pub mod nexus_api;
 pub mod nexus_mcp;
 pub mod security;
 pub mod session_service;
-pub mod stt_service;
+pub mod whisper_service;
 pub mod wiki_service;
 pub mod canvas_service;

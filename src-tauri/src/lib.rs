@@ -19,9 +19,10 @@ use services::file_watcher::FileWatcherService;
 use services::gateway_setup::GatewaySetupService;
 use services::knowledge_service::KnowledgeService;
 use services::session_service::SessionService;
-use services::stt_service::SttService;
+use services::whisper_service::WhisperService;
 use services::wiki_service::WikiService;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::Emitter;
 use tauri::Manager;
@@ -181,9 +182,10 @@ pub fn run() {
 
     let gateway_setup_service = GatewaySetupService::new(&hermes_home);
 
-    let stt_state = commands::voice::SttState {
-        service: std::sync::Mutex::new(SttService::new()),
-        barge_in_child: std::sync::Mutex::new(None),
+    let whisper_state = commands::voice::WhisperState {
+        is_recording: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        stop_signal: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        result_rx: std::sync::Mutex::new(None),
     };
 
     #[tauri::command]
@@ -204,6 +206,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(config_state)
         .manage(auth_state)
         .manage(agent_state)
@@ -213,7 +216,7 @@ pub fn run() {
         .manage(canvas_state)
         .manage(agent_manager)
         .manage(agent_registry_state)
-        .manage(stt_state)
+        .manage(whisper_state)
         .manage(gateway_setup_service)
         .setup(|app| {
             let handle = app.handle().clone();
@@ -289,6 +292,9 @@ pub fn run() {
 
             }
 
+            // Voice overlay window — centered recording indicator (hidden by default)
+            commands::voice_overlay::create_overlay_window(app);
+
             // Initial wiki scan — indexes existing markdown files on startup.
             // The file watcher only catches changes after startup, so this
             // ensures existing files (including subdirectories) are indexed.
@@ -318,6 +324,15 @@ pub fn run() {
 
             // Start Hermes Agent in background thread
             let startup_handle = handle.clone();
+            // Force-extract bundled resources so AgentManager can find them on disk
+            let resource_dir = app.path().resource_dir().ok();
+            if let Some(ref rd) = resource_dir {
+                let am = startup_handle.state::<AgentManager>();
+                am.set_resource_dir(rd.clone());
+                // Resolve key files to trigger lazy extraction
+                let _ = app.path().resolve("hermes-agent/python/python.exe", tauri::path::BaseDirectory::Resource);
+                let _ = app.path().resolve("hermes-agent/hermes_cli/main.py", tauri::path::BaseDirectory::Resource);
+            }
             std::thread::spawn(move || {
                 let am = startup_handle.state::<AgentManager>();
                 if let Err(e) = am.start() {
@@ -548,6 +563,7 @@ pub fn run() {
             commands::knowledge::nexus_maintain_dedup,
             commands::knowledge::nexus_maintain_fix_migrated,
             commands::knowledge::nexus_get_maintenance_status,
+            commands::knowledge::check_nexus_server_health,
             // Layer 2-6 Extended Maintenance
             commands::knowledge::nexus_maintain_classify,
             commands::knowledge::nexus_run_pagerank,
@@ -578,6 +594,8 @@ pub fn run() {
             commands::config::get_config,
             commands::config::save_config,
             commands::config::update_api_key,
+            commands::config::verify_api_key,
+            commands::config::copy_agent_config_for_nexus,
             commands::config::save_user_profile,
             commands::config::export_data,
             commands::config::import_data,
@@ -593,15 +611,13 @@ pub fn run() {
             commands::auth::change_password,
             // Voice
             commands::voice::check_voice_deps,
-            commands::voice::prewarm_voice_model,
             commands::voice::voice_diagnose,
             commands::voice::tts_speak,
             commands::voice::tts_preview,
-            commands::voice::voice_start_listening,
-            commands::voice::voice_stop_listening,
-            commands::voice::voice_listen_once,
-            commands::voice::voice_start_barge_in_monitor,
-            commands::voice::voice_stop_barge_in_monitor,
+            commands::voice::check_voice_deps,
+            commands::voice::start_ptt_recording,
+            commands::voice::stop_ptt_recording,
+            commands::voice::cancel_ptt_recording,
             // Session
             commands::session::list_sessions,
             commands::session::get_session,

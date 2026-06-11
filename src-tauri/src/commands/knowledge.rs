@@ -152,7 +152,7 @@ pub async fn save_chat_to_knowledge(
         &session_title,
         &messages_json,
         namespace.as_deref().unwrap_or("chat"),
-    )
+    ).await
 }
 
 #[tauri::command]
@@ -453,6 +453,35 @@ pub async fn nexus_get_maintenance_status(
 ) -> Result<MaintenanceStatus, String> {
     let service = state.service.lock().await;
     service.nexus_get_maintenance_status()
+}
+
+/// Check if the Nexus HTTP API server is running and reachable.
+/// Returns the port it's listening on, or an error if unreachable.
+#[tauri::command]
+pub fn check_nexus_server_health() -> Result<serde_json::Value, String> {
+    let hermes_home = crate::services::config_service::ConfigService::new().hermes_home().to_path_buf();
+    let port_file = hermes_home.join("nexus_port");
+    let port_str = std::fs::read_to_string(&port_file)
+        .map_err(|e| format!("无法读取 nexus_port 文件 ({}): {e}", port_file.display()))?;
+    let port = port_str.trim();
+    if port.is_empty() {
+        return Err("nexus_port 文件为空".into());
+    }
+    let url = format!("http://127.0.0.1:{port}/nexus/maintain/health");
+    let client = reqwest::blocking::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .map_err(|e| format!("Nexus 服务连接失败 (端口 {port}): {e}"))?;
+    if client.status().is_success() {
+        Ok(serde_json::json!({
+            "running": true,
+            "port": port.parse::<u16>().unwrap_or(0),
+            "url": format!("http://127.0.0.1:{port}"),
+        }))
+    } else {
+        Err(format!("Nexus 服务返回异常状态: {}", client.status()))
+    }
 }
 
 // ── Layer 2-6 Extended Maintenance ──

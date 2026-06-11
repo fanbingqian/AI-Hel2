@@ -16,6 +16,8 @@ export interface AgentInfo {
   added_manually: boolean;
   status: "Running" | "Detected" | "Offline";
   base_url: string;
+  vision_base_url?: string;
+  reasoning_base_url?: string;
 }
 
 export function useAgentRegistry() {

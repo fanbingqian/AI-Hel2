@@ -3,9 +3,7 @@
   min-width: 0;
   position: relative;
   overflow: hidden;
-  background: rgba(18, 18, 24, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: transparent;
   cursor: grab;
 }
 

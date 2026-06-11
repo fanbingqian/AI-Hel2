@@ -3,7 +3,7 @@ import { useUIStore } from "../../stores/uiStore";
 import { useKnowledgeStore } from "../../stores/knowledgeStore";
 import { PanelResizer } from "../layout/PanelResizer";
 import { ForceGraph2DWrapper } from "./ForceGraph2DWrapper";
-import { ForceGraph3DWrapper } from "./ForceGraph3DWrapper";
+
 import { FloatingMenu } from "./FloatingMenu";
 import { GraphSettingsPanel } from "./GraphSettingsPanel";
 import { LintPanel } from "./LintPanel";
@@ -17,7 +17,6 @@ export default function SphereChatView() {
   const setChatPanelWidth = useUIStore((s) => s.setChatPanelWidth);
   const sessionListOpen = useUIStore((s) => s.sessionListExpanded);
 
-  const graphViewMode = useKnowledgeStore((s) => s.graphViewMode);
   const settingsOpen = useKnowledgeStore((s) => s.settingsOpen);
   const setSettingsOpen = useKnowledgeStore((s) => s.setSettingsOpen);
   const showLintPanel = useKnowledgeStore((s) => s.showLintPanel);
@@ -39,11 +38,11 @@ export default function SphereChatView() {
 
   return (
     <div className={styles.container}>
-      {graphViewMode === "2d" ? <ForceGraph2DWrapper /> : <ForceGraph3DWrapper />}
+      <ForceGraph2DWrapper />
       <FloatingMenu onOpenSettings={() => setSettingsOpen(true)} />
       {settingsOpen && <GraphSettingsPanel />}
-      {graphViewMode === "2d" && showLintPanel && <LintPanel />}
-      {graphViewMode === "2d" && showEntityList && <EntityListPanel />}
+      {showLintPanel && <LintPanel />}
+      {showEntityList && <EntityListPanel />}
       <PanelResizer onResize={handleChatResize} />
       <div className={styles.chatColumn}>
         <ChatPanel />

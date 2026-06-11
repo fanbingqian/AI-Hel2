@@ -175,7 +175,7 @@ export function VoiceInput() {
                 <path d="M5 10a7 7 0 0 0 14 0" />
               </svg>
             </div>
-            点击或按住说话
+            点击或按住说话（或按住右Alt键）
           </>
         )}
       </button>

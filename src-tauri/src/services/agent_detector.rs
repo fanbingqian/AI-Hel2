@@ -168,6 +168,7 @@ impl AgentDetector {
                 models,
                 vision_models: vec![],
                 reasoning_models: vec![],
+                ..Default::default()
             },
             detected: Some(true),
             detected_path: Some(path.to_string_lossy().to_string()),
@@ -187,6 +188,7 @@ impl AgentDetector {
                 models: vec!["claude-sonnet-4-6".into()],
                 vision_models: vec![],
                 reasoning_models: vec![],
+                ..Default::default()
             },
             detected: Some(true),
             detected_path: path.map(|p| p.to_string_lossy().to_string()),
@@ -206,6 +208,7 @@ impl AgentDetector {
                 models: vec!["gpt-4o".into()],
                 vision_models: vec![],
                 reasoning_models: vec![],
+                ..Default::default()
             },
             detected: Some(true),
             detected_path: path.map(|p| p.to_string_lossy().to_string()),

@@ -8,8 +8,6 @@ interface Props {
 
 export function FloatingMenu({ onOpenSettings }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const graphViewMode = useKnowledgeStore((s) => s.graphViewMode);
-  const setGraphViewMode = useKnowledgeStore((s) => s.setGraphViewMode);
   const showLintPanel = useKnowledgeStore((s) => s.showLintPanel);
   const setShowLintPanel = useKnowledgeStore((s) => s.setShowLintPanel);
   const showEntityList = useKnowledgeStore((s) => s.showEntityList);
@@ -26,11 +24,6 @@ export function FloatingMenu({ onOpenSettings }: Props) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [expanded]);
-
-  const handleSelect = useCallback((mode: "2d" | "3d") => {
-    setGraphViewMode(mode);
-    setExpanded(false);
-  }, [setGraphViewMode]);
 
   const handleLint = useCallback(() => {
     setShowLintPanel(!showLintPanel);
@@ -54,56 +47,28 @@ export function FloatingMenu({ onOpenSettings }: Props) {
         <div className={styles.menu}>
           <button
             type="button"
-            className={`${styles.menuItem} ${graphViewMode === "2d" ? styles.menuItemActive : ""}`}
-            onClick={() => handleSelect("2d")}
+            className={`${styles.menuItem} ${showLintPanel ? styles.menuItemActive : ""}`}
+            onClick={handleLint}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <rect x="3" y="3" width="18" height="18" rx="2"/>
-              <line x1="3" y1="9" x2="21" y2="9"/>
-              <line x1="9" y1="3" x2="9" y2="21"/>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
-            <span>2D 图谱</span>
+            <span>数据质量</span>
           </button>
           <button
             type="button"
-            className={`${styles.menuItem} ${graphViewMode === "3d" ? styles.menuItemActive : ""}`}
-            onClick={() => handleSelect("3d")}
+            className={`${styles.menuItem} ${showEntityList ? styles.menuItemActive : ""}`}
+            onClick={handleEntityList}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-              <line x1="12" y1="22.08" x2="12" y2="12"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
-            <span>3D 图谱</span>
+            <span>实体列表</span>
           </button>
-          {graphViewMode === "2d" && (
-            <>
-              <button
-                type="button"
-                className={`${styles.menuItem} ${showLintPanel ? styles.menuItemActive : ""}`}
-                onClick={handleLint}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                  <line x1="12" y1="9" x2="12" y2="13"/>
-                  <line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                <span>数据质量</span>
-              </button>
-              <button
-                type="button"
-                className={`${styles.menuItem} ${showEntityList ? styles.menuItemActive : ""}`}
-                onClick={handleEntityList}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <line x1="3" y1="6" x2="21" y2="6"/>
-                  <line x1="3" y1="12" x2="21" y2="12"/>
-                  <line x1="3" y1="18" x2="21" y2="18"/>
-                </svg>
-                <span>实体列表</span>
-              </button>
-            </>
-          )}
           <button
             type="button"
             className={styles.menuItem}

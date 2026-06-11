@@ -2,6 +2,13 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/hermes-agent/
+updater-key
+updater-key.key
+updater-key.pub
+updater-key.key.pub
+target/
+hermes-agent.zip
+*调研报告*.md
 *.log
 logs/
 .env

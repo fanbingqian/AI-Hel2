@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
-import type { Entity, Relation, GraphData, EntityDetail, EntityReference, InferenceCandidate, ExtractionCompleteEvent, MergeSuggestion, FeedbackEntry, GraphSettings2D, GraphSettings3D, LintWarning } from "../types/knowledge";
-import { DEFAULT_GRAPH_SETTINGS_2D, DEFAULT_GRAPH_SETTINGS_3D } from "../types/knowledge";
+import type { Entity, Relation, GraphData, EntityDetail, EntityReference, InferenceCandidate, ExtractionCompleteEvent, MergeSuggestion, FeedbackEntry, GraphSettings2D, LintWarning } from "../types/knowledge";
+import { DEFAULT_GRAPH_SETTINGS_2D } from "../types/knowledge";
 import { getGraphData, getSmartDisplay, getEntityDetail, searchEntities, referenceEntityToChat, getInferences, nexusUpdateEntity, nexusDeleteEntity, nexusAddRelation, nexusUpdateRelation, nexusDeleteRelation, nexusSubmitFeedback, nexusGetPendingMerges, nexusConfirmMerge, nexusIgnoreMerge, nexusBatchOperation, nexusGetEntityFeedback, nexusRunSynthesis, nexusAnalyzeTypes, getConfig, saveConfig } from "../services/api";
 
 const SMART_DISPLAY_THRESHOLD = 500;
@@ -58,16 +58,11 @@ interface KnowledgeState {
   runSynthesis: () => Promise<void>;
   analyzeTypes: () => Promise<void>;
 
-  graphViewMode: "2d" | "3d";
   graphSettings2D: GraphSettings2D;
-  graphSettings3D: GraphSettings3D;
   settingsOpen: boolean;
-  setGraphViewMode: (mode: "2d" | "3d") => void;
   setSettingsOpen: (open: boolean) => void;
   updateGraphSettings2D: (updates: Partial<GraphSettings2D>) => void;
-  updateGraphSettings3D: (updates: Partial<GraphSettings3D>) => void;
   resetGraphSettings2D: () => void;
-  resetGraphSettings3D: () => void;
   loadGraphSettings: () => Promise<void>;
   saveGraphSettings: () => Promise<void>;
 
@@ -275,12 +270,8 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
     get().loadPendingMerges();
   },
 
-  graphViewMode: "2d",
   graphSettings2D: { ...DEFAULT_GRAPH_SETTINGS_2D },
-  graphSettings3D: { ...DEFAULT_GRAPH_SETTINGS_3D },
   settingsOpen: false,
-
-  setGraphViewMode: (mode) => set({ graphViewMode: mode }),
 
   setSettingsOpen: (open) => set({ settingsOpen: open }),
 
@@ -291,21 +282,9 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
     }));
   },
 
-  updateGraphSettings3D: (updates) => {
-    set((s) => ({
-      graphSettings3D: { ...s.graphSettings3D, ...updates },
-      showInferenceEdges: updates.showInferenceEdges !== undefined ? updates.showInferenceEdges : s.showInferenceEdges,
-    }));
-  },
-
   resetGraphSettings2D: () => set({
     graphSettings2D: { ...DEFAULT_GRAPH_SETTINGS_2D },
     showOrphans: true,
-  }),
-
-  resetGraphSettings3D: () => set({
-    graphSettings3D: { ...DEFAULT_GRAPH_SETTINGS_3D },
-    showInferenceEdges: true,
   }),
 
   loadGraphSettings: async () => {
@@ -313,23 +292,8 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
       const config = await getConfig() as Record<string, unknown>;
       if (config && config.graph) {
         const g = config.graph as Record<string, unknown>;
-        const mode = (g.viewMode as "2d" | "3d") || "2d";
-        // Load 3D settings (supports legacy flat format → migration)
-        const threeD: Record<string, unknown> = (g.threeD as Record<string, unknown>) || g;
-        // Load 2D settings
         const twoD: Record<string, unknown> = (g.twoD as Record<string, unknown>) || {};
         set({
-          graphViewMode: mode,
-          graphSettings3D: {
-            repulsion: (threeD.repulsion as number) ?? DEFAULT_GRAPH_SETTINGS_3D.repulsion,
-            attraction: (threeD.attraction as number) ?? DEFAULT_GRAPH_SETTINGS_3D.attraction,
-            linkDistance: (threeD.linkDistance as number) ?? DEFAULT_GRAPH_SETTINGS_3D.linkDistance,
-            centering: (threeD.centering as number) ?? DEFAULT_GRAPH_SETTINGS_3D.centering,
-            showLabels: (threeD.showLabels as boolean) ?? DEFAULT_GRAPH_SETTINGS_3D.showLabels,
-            showInferenceEdges: (threeD.showInferenceEdges as boolean) ?? DEFAULT_GRAPH_SETTINGS_3D.showInferenceEdges,
-            nodeScale: (threeD.nodeScale as number) ?? DEFAULT_GRAPH_SETTINGS_3D.nodeScale,
-            edgeOpacity: (threeD.edgeOpacity as number) ?? DEFAULT_GRAPH_SETTINGS_3D.edgeOpacity,
-          },
           graphSettings2D: {
             searchQuery: (twoD.searchQuery as string) ?? DEFAULT_GRAPH_SETTINGS_2D.searchQuery,
             showTags: (twoD.showTags as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showTags,
@@ -349,38 +313,29 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
             linkLength: (twoD.linkLength as number) ?? DEFAULT_GRAPH_SETTINGS_2D.linkLength,
             dragForce: (twoD.dragForce as number) ?? DEFAULT_GRAPH_SETTINGS_2D.dragForce,
           },
-          showInferenceEdges: (threeD.showInferenceEdges as boolean) ?? true,
           showOrphans: (twoD.showOrphans as boolean) ?? true,
         });
-        // Restore 2D panel filters from localStorage
         try {
           const etf = localStorage.getItem("hermes_knowledge_type_filter");
           const nsf = localStorage.getItem("hermes_knowledge_namespace_filter");
           if (etf) set({ entityTypeFilter: etf === "__all__" ? null : etf });
           if (nsf) set({ namespaceFilter: nsf === "__all__" ? null : nsf });
-        } catch { /* localStorage not available */ }
+        } catch {}
       }
-    } catch { /* config not available yet */ }
+    } catch {}
   },
 
   saveGraphSettings: async () => {
     try {
-      const { graphViewMode, graphSettings2D, graphSettings3D } = get();
-      await saveConfig({
-        graph: {
-          viewMode: graphViewMode,
-          twoD: graphSettings2D,
-          threeD: graphSettings3D,
-        },
-      });
-      // Persist 2D panel filters to localStorage
+      const { graphSettings2D } = get();
+      await saveConfig({ graph: { twoD: graphSettings2D } });
       try {
         const state = get();
         if (state.entityTypeFilter) localStorage.setItem("hermes_knowledge_type_filter", state.entityTypeFilter);
         else localStorage.setItem("hermes_knowledge_type_filter", "__all__");
         if (state.namespaceFilter) localStorage.setItem("hermes_knowledge_namespace_filter", state.namespaceFilter);
         else localStorage.setItem("hermes_knowledge_namespace_filter", "__all__");
-      } catch { /* localStorage not available */ }
+      } catch {}
     } catch (e) {
       console.error("Failed to save graph settings:", e);
     }

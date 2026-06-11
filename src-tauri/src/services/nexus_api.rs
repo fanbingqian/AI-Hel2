@@ -51,7 +51,10 @@ pub fn start(knowledge: Arc<KnowledgeService>, hermes_home: &std::path::Path) {
             }
 
             let is_maintenance_post = method == "POST" && url.starts_with("/nexus/maintain/");
-            if method != "GET" && !is_maintenance_post {
+            let is_wiki_crud = (method == "POST" && url == "/nexus/wiki")
+                || (method == "PUT" && url.starts_with("/nexus/wiki/"))
+                || (method == "DELETE" && url.starts_with("/nexus/wiki/"));
+            if method != "GET" && !is_maintenance_post && !is_wiki_crud {
                 let _ = req.respond(
                     tiny_http::Response::from_string("Method not allowed")
                         .with_status_code(405),
@@ -59,7 +62,15 @@ pub fn start(knowledge: Arc<KnowledgeService>, hermes_home: &std::path::Path) {
                 continue;
             }
 
-            let response = handle_request(&knowledge, &url);
+            let body = if method == "POST" || method == "PUT" {
+                let mut s = String::new();
+                req.as_reader().read_to_string(&mut s).ok();
+                Some(s)
+            } else {
+                None
+            };
+
+            let response = handle_request(&knowledge, &url, body.as_deref());
             let _ = req.respond(response);
         }
 
@@ -70,8 +81,94 @@ pub fn start(knowledge: Arc<KnowledgeService>, hermes_home: &std::path::Path) {
 fn handle_request(
     knowledge: &Arc<KnowledgeService>,
     url: &str,
+    body: Option<&str>,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let path = url.split('?').next().unwrap_or(url);
+
+    // ── Wiki document CRUD ──
+
+    let wiki_dir = knowledge.wiki_dir();
+
+    // POST /nexus/wiki — create a new wiki document (.md file)
+    if path == "/nexus/wiki" && body.is_some() {
+        let body = body.unwrap();
+        let v: serde_json::Value = match serde_json::from_str(body) {
+            Ok(v) => v,
+            Err(e) => {
+                let m = serde_json::json!({"error": format!("Invalid JSON: {e}")}).to_string();
+                return json_response(&m).with_status_code(400);
+            }
+        };
+        let filename = v.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+        if filename.is_empty() {
+            return json_response(r#"{"error":"filename is required"}"#).with_status_code(400);
+        }
+        let content = v.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        // Sanitize filename: only allow safe characters
+        let safe_name: String = filename.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == ' ' || c > '\u{7f}' { c } else { '_' })
+            .collect();
+        let file_path = wiki_dir.join(&safe_name);
+
+        return match std::fs::write(&file_path, content) {
+            Ok(()) => {
+                // Trigger extraction for the new file
+                let rel = safe_name.clone();
+                std::thread::spawn(move || {
+                    // Let the file watcher pick it up naturally
+                    let _ = rel;
+                });
+                let resp = serde_json::json!({"ok": true, "path": safe_name}).to_string();
+                json_response(&resp).with_status_code(201)
+            }
+            Err(e) => {
+                let m = serde_json::json!({"error": format!("Failed to write file: {e}")}).to_string();
+                json_response(&m).with_status_code(500)
+            }
+        };
+    }
+
+    // PUT /nexus/wiki/{path} — update a wiki document
+    if let Some(rel_path) = path.strip_prefix("/nexus/wiki/") {
+        let rel_path = rel_path.trim_matches('/');
+        if rel_path.is_empty() { return json_response(r#"{"error":"path required"}"#).with_status_code(400); }
+        if body.is_some() {
+            let v: serde_json::Value = match serde_json::from_str(body.unwrap()) {
+                Ok(v) => v,
+                Err(e) => {
+                    let m = serde_json::json!({"error": format!("Invalid JSON: {e}")}).to_string();
+                    return json_response(&m).with_status_code(400);
+                }
+            };
+            let content = v.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let file_path = wiki_dir.join(rel_path);
+            if !file_path.exists() {
+                return json_response(r#"{"error":"file not found"}"#).with_status_code(404);
+            }
+            return match std::fs::write(&file_path, content) {
+                Ok(()) => json_response(r#"{"ok":true}"#),
+                Err(e) => {
+                    let m = serde_json::json!({"error": format!("Failed to write: {e}")}).to_string();
+                    json_response(&m).with_status_code(500)
+                }
+            };
+        }
+        // Fall through to GET for body-less requests
+    }
+
+    // DELETE /nexus/wiki/{path} — delete a wiki document
+    if let Some(rel_path) = path.strip_prefix("/nexus/wiki/delete/") {
+        let rel_path = rel_path.trim_matches('/');
+        if rel_path.is_empty() { return json_response(r#"{"error":"path required"}"#).with_status_code(400); }
+        let file_path = wiki_dir.join(rel_path);
+        return match std::fs::remove_file(&file_path) {
+            Ok(()) => json_response(r#"{"ok":true}"#),
+            Err(e) => {
+                let m = serde_json::json!({"error": format!("Failed to delete: {e}")}).to_string();
+                json_response(&m).with_status_code(404)
+            }
+        };
+    }
 
     // GET /nexus/map
     if path == "/nexus/map" {
@@ -112,7 +209,12 @@ fn handle_request(
                 let body = serde_json::json!(detail).to_string();
                 json_response(&body)
             }
-            Err(e) => error_response(&e),
+            Err(e) => {
+                let body = serde_json::json!({"error": e, "entity_id": id}).to_string();
+                tiny_http::Response::from_string(body)
+                    .with_header("Content-Type: application/json; charset=utf-8".parse::<tiny_http::Header>().unwrap())
+                    .with_status_code(404)
+            }
         };
     }
 

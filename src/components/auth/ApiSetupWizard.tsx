@@ -20,10 +20,12 @@ const PROVIDERS: ProviderDef[] = [
   { id: "xai", name: "xAI", defaultModel: "grok-3", color: "#e5e7eb", envKey: "XAI_API_KEY" },
   { id: "openrouter", name: "OpenRouter", defaultModel: "openai/gpt-4o", color: "#a78bfa", envKey: "OPENROUTER_API_KEY" },
   { id: "groq", name: "Groq", defaultModel: "llama-4-maverick", color: "#f97316", envKey: "GROQ_API_KEY" },
+  { id: "aigocode", name: "AIGoCode", defaultModel: "gpt-5.4", color: "#07c160", envKey: "AIGOCODE_API_KEY" },
   { id: "custom", name: "自定义", defaultModel: "gpt-4o", color: "#9ca3af", envKey: "CUSTOM_API_KEY" },
 ];
 
 const AGENT_BASE_URLS: Record<string, string> = {
+  aigocode: "https://api.aigocode.com/v1",
   openai: "https://api.openai.com/v1",
   deepseek: "https://api.deepseek.com/v1",
   xai: "https://api.x.ai/v1",

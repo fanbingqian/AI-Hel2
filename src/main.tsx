@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { Pill } from "./pill";
+import { VoiceOverlay } from "./components/voice/VoiceOverlay";
 import { invoke } from "@tauri-apps/api/core";
 
 function applyTheme(theme: string) {
@@ -24,11 +25,12 @@ async function initTheme() {
 }
 
 const isPill = new URLSearchParams(window.location.search).get("window") === "pill";
+const isVoiceOverlay = new URLSearchParams(window.location.search).get("window") === "voice-overlay";
 
 initTheme().then(() => {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      {isPill ? <Pill /> : <App />}
+      {isPill ? <Pill /> : isVoiceOverlay ? <VoiceOverlay /> : <App />}
     </React.StrictMode>
   );
 });

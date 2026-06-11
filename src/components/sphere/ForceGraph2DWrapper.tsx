@@ -1,12 +1,14 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import * as d3 from "d3";
 import { useKnowledgeStore } from "../../stores/knowledgeStore";
-import { useChatStore } from "../../stores/chatStore";
 import { buildGraphData, type FGNode, type FGLink } from "./graphAdapter";
-import { NodeContextMenu } from "./NodeContextMenu";
+import {
+  createSimulation, tick, pinNode, movePinned, unpinNode,
+  type SimState, type SimNode,
+} from "./physics";
 import styles from "./KnowledgeSphere.module.css";
 
-// ── MiroFish palette ──
+// ── Visual constants ──
 const MIROFISH_PALETTE = [
   "#FF6B35", "#004E89", "#7B2D8E", "#1A936F", "#C5283D",
   "#E9724C", "#3498db", "#9b59b6", "#27ae60", "#f39c12",
@@ -28,12 +30,18 @@ const HOVER_RING = "#3498db";
 export function ForceGraph2DWrapper() {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const simRef = useRef<d3.Simulation<any, any> | null>(null);
+  const simRef = useRef<SimState | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const dragIdRef = useRef<string | null>(null);
+  const hoverIdRef = useRef<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  const transformRef = useRef({ x: 0, y: 0, k: 1 });
   const [dims, setDims] = useState({ w: 800, h: 600 });
   const [detailNode, setDetailNode] = useState<any>(null);
   const [showLegend, setShowLegend] = useState(true);
-  const hoveredIdRef = useRef<string | null>(null);
+  const simReadyRef = useRef(false);
 
+  // Resize observer
   useEffect(() => {
     const el = containerRef.current; if (!el) return;
     const ro = new ResizeObserver((e) => {
@@ -44,33 +52,32 @@ export function ForceGraph2DWrapper() {
     return () => ro.disconnect();
   }, []);
 
+  // Store slices
   const entities = useKnowledgeStore((s) => s.entities);
   const relations = useKnowledgeStore((s) => s.relations);
   const inferences = useKnowledgeStore((s) => s.inferences);
   const selectedId = useKnowledgeStore((s) => s.selectedEntityId);
   const selectEntity = useKnowledgeStore((s) => s.selectEntity);
   const graphSettings = useKnowledgeStore((s) => s.graphSettings2D);
+  selectedIdRef.current = selectedId;
 
   // Build graph data
   const { nodes, links } = useMemo(() => {
     const gd = buildGraphData(entities, relations, inferences, {
-      focusedNodeId: null, focusDepth: 2,
-      showOrphans: true, showFiles: true, showInferenceEdges: true,
-      nodeRelSize: 1, searchQuery: "", minImportance: 0, colorGroups: [],
+      focusedNodeId: null, focusDepth: 2, showOrphans: true, showFiles: true,
+      showInferenceEdges: true, nodeRelSize: 1, searchQuery: "", minImportance: 0, colorGroups: [],
     });
-    // Assign colors
     const ns = gd.nodes.map((n) => ({
       ...n,
       _color: n.entityType && n.entityType !== "unknown" ? typeColor(n.entityType) : "#8b95a3",
     }));
-    const ls = [...gd.links, ...gd.infLinks].map((l) => ({
-      ...l,
-      _isInf: (l as any).relationTypes?.includes?.("__inference__"),
-    }));
-    return { nodes: ns, links: ls };
+    return { nodes: ns, links: [...gd.links, ...gd.infLinks] as FGLink[] };
   }, [entities, relations, inferences]);
 
-  // Type legend
+  // Data key for re-simulation
+  const dataKey = useMemo(() => `${nodes.length}-${links.length}`, [nodes.length, links.length]);
+
+  // Legend
   const legend = useMemo(() => {
     const m = new Map<string, { c: string; n: number }>();
     for (const e of entities) {
@@ -80,148 +87,196 @@ export function ForceGraph2DWrapper() {
     return [...m].sort((a, b) => b[1].n - a[1].n).map(([t, v]) => ({ type: t, ...v }));
   }, [entities]);
 
-  // Only rebuild simulation when data changes (not on resize)
-  const dataKey = useMemo(() => `${nodes.length}-${links.length}`, [nodes.length, links.length]);
-
+  // ── Physics simulation + render loop ──
   useEffect(() => {
     const svg = d3.select(svgRef.current!);
     const W = dims.w, H = dims.h;
-    if (W < 10 || H < 10) return;
+    if (W < 10 || H < 10 || nodes.length === 0) return;
 
-    // Setup SVG once — don't clear on resize if sim already exists
-    const hasExistingSim = simRef.current !== null;
-    if (!hasExistingSim) {
-      svg.selectAll("*").remove();
-    }
+    // Setup SVG
+    svg.selectAll("*").remove();
     svg.attr("viewBox", [0, 0, W, H]);
-
-    if (hasExistingSim) {
-      // Just update center and viewBox — no rebuild
-      simRef.current!.force("center", d3.forceCenter(W / 2, H / 2).strength(0.15));
-      return;
-    }
 
     const gRoot = svg.append("g");
 
-    // Zoom
-    svg.call(
-      d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.1, 5])
-        .on("zoom", (e) => gRoot.attr("transform", e.transform.toString()))
-    );
+    // Zoom behavior (D3 handles SVG transform, we handle pan/scale)
+    const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.2, 3])
+      .on("zoom", (e) => {
+        transformRef.current = { x: e.transform.x, y: e.transform.y, k: e.transform.k };
+        gRoot.attr("transform", e.transform.toString());
+      });
+    svg.call(zoomBehavior);
 
-    // Clone data for simulation
-    const simNodes: any[] = nodes.map((n) => ({ ...n, x: W / 2 + (Math.random() - 0.5) * 100, y: H / 2 + (Math.random() - 0.5) * 100 }));
-    const simLinks = links.map((l) => {
-      const s = typeof l.source === "object" ? (l.source as any).id : l.source;
-      const t = typeof l.target === "object" ? (l.target as any).id : l.target;
-      const sn = simNodes.find((n) => n.id === s);
-      const tn = simNodes.find((n) => n.id === t);
-      return { ...l, source: sn || s, target: tn || t };
-    });
+    // Create simulation (hand-written physics)
+    const s = graphSettings;
+    const nodeIds = nodes.map((n) => n.id);
+    const edgeArray: [string, string][] = links.map((l) => [l.source as string, l.target as string]);
+    const prevNodes = simReadyRef.current ? simRef.current?.nodes : undefined;
 
-    // Force simulation
-    const sim = d3.forceSimulation(simNodes)
-      .force("link", d3.forceLink(simLinks).id((d: any) => d.id).distance(40))
-      .force("charge", d3.forceManyBody().strength(-180))
-      .force("center", d3.forceCenter(W / 2, H / 2).strength(0.15))
-      .force("collide", d3.forceCollide(15))
-      .alphaDecay(0.03);
-    simRef.current = sim;
+    simRef.current = createSimulation(nodeIds, edgeArray, {
+      centering: (s.centerForce || 1) * 0.006,
+      repulsion: 3000 * (s.repelForce || 3),
+      attraction: 0.008 * (s.attractForce || 3),
+      linkDistance: 80 * (s.linkLength || 0.5),
+      dragForce: s.dragForce || 8,
+      alphaDecay: 0.04,
+    }, W, H, prevNodes);
+    simReadyRef.current = true;
 
-    // ── Links ──
+    // Set node radii
+    const sim = simRef.current!;
+    for (const n of nodes) {
+      const sn = sim.nodes.get(n.id);
+      if (sn) sn.radius = 12;
+    }
+
+    // ── SVG elements ──
     const linkG = gRoot.append("g").attr("class", "links");
-    const linkEl = linkG.selectAll("path").data(simLinks).join("path")
+    const linkEl = linkG.selectAll("path").data(links).join("path")
       .attr("stroke", EDGE_COLOR)
-      .attr("stroke-width", 0.6)
+      .attr("stroke-width", (s.linkThickness ?? 1.25) * 0.4)
       .attr("fill", "none");
 
-    // Link labels
-    const lblG = gRoot.append("g").attr("class", "link-labels");
-    const lblEl = lblG.selectAll("g").data(simLinks).join("g");
-    lblEl.append("rect").attr("fill", "rgba(26,26,26,0.85)").attr("rx", 3);
-    lblEl.append("text").attr("fill", "#888").attr("font-size", 8).attr("text-anchor", "middle").attr("dy", 3)
-      .text((d: any) => {
-        if (d._isInf || d.isFileEdge) return "";
-        const ts = Array.isArray(d.relationTypes) ? d.relationTypes : [d.relationTypes];
-        return ts[0] || "";
-      });
-
-    // ── Nodes ──
     const nodeG = gRoot.append("g").attr("class", "nodes");
-    const nodeEl = nodeG.selectAll("circle").data(simNodes).join("circle")
-      .attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4))
+    const nodeEl = nodeG.selectAll("circle").data(nodes).join("circle")
+      .attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5))
       .attr("fill", (d: any) => d._color || "#8b95a3")
       .attr("stroke", "rgba(0,0,0,0.3)")
       .attr("stroke-width", 1)
-      .attr("cursor", "pointer")
-      .call(
-        d3.drag<any, any>()
-          .on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-          .on("drag", (e, d) => { d.fx = e.x; d.fy = e.y; })
-          .on("end", (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
-      );
+      .attr("cursor", "pointer");
 
-    // Node labels
-    const nlG = gRoot.append("g").attr("class", "node-labels");
-    const nlEl = nlG.selectAll("text").data(simNodes).join("text")
-      .attr("fill", "#aaa").attr("font-size", 10).attr("font-weight", 600)
-      .attr("text-anchor", "middle")
-      .attr("dy", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) + 12)
+    const lblG = gRoot.append("g").attr("class", "labels");
+    const lblEl = lblG.selectAll("text").data(nodes).join("text")
+      .attr("fill", "#aaa").attr("font-size", 5).attr("text-anchor", "middle")
       .text((d: any) => d.name.length > 12 ? d.name.slice(0, 11) + "…" : d.name);
 
-    // Hover / click events
-    nodeEl
-      .on("mouseenter", function (e, d) {
-        hoveredIdRef.current = d.id;
-        d3.select(this).attr("stroke", HOVER_RING).attr("stroke-width", 3);
-        const related = new Set<string>();
-        simLinks.forEach((l: any) => {
-          if (l.source.id === d.id) related.add(l.target.id);
-          if (l.target.id === d.id) related.add(l.source.id);
-        });
-        linkEl.attr("stroke", (l: any) => l.source.id === d.id || l.target.id === d.id ? EDGE_HOVER : EDGE_DIM);
-        nodeEl.attr("opacity", (n: any) => n.id === d.id || related.has(n.id) ? 1 : 0.15);
-        nlEl.attr("opacity", (n: any) => n.id === d.id || related.has(n.id) ? 1 : 0.2);
+    // ── Drag (D3 handles mouse tracking) ──
+    const dragBehavior = d3.drag<any, any>()
+      .on("start", (e, d) => {
+        dragIdRef.current = d.id;
+        const sim = simRef.current!;
+        const sn = sim.nodes.get(d.id);
+        if (sn) pinNode(sim, d.id, sn.x, sn.y);
       })
-      .on("mouseleave", function () {
-        hoveredIdRef.current = null;
-        nodeEl.attr("stroke", "rgba(0,0,0,0.3)").attr("stroke-width", 1).attr("opacity", 1);
-        linkEl.attr("stroke", EDGE_COLOR);
-        nlEl.attr("opacity", 1);
+      .on("drag", (e, d) => {
+        const world = screenToWorld(e.sourceEvent, svgRef.current!, transformRef.current);
+        if (world) movePinned(simRef.current!, d.id, world.x, world.y);
       })
-      .on("click", (e, d) => { selectEntity(d.id); setDetailNode(d); });
+      .on("end", (e, d) => {
+        dragIdRef.current = null;
+        unpinNode(simRef.current!, d.id);
+      });
+    nodeEl.call(dragBehavior);
 
+    // Hover
+    nodeEl.on("mouseenter", function (e, d) {
+      hoverIdRef.current = d.id;
+      d3.select(this).attr("stroke", HOVER_RING).attr("stroke-width", 3);
+      const related = new Set<string>();
+      links.forEach((l) => {
+        if (l.source === d.id) related.add(l.target as string);
+        if (l.target === d.id) related.add(l.source as string);
+      });
+      linkEl.attr("stroke", (l: any) => l.source === d.id || l.target === d.id ? EDGE_HOVER : EDGE_DIM);
+      nodeEl.attr("opacity", (n: any) => n.id === d.id || related.has(n.id) ? 1 : 0.15);
+      lblEl.attr("opacity", (n: any) => n.id === d.id || related.has(n.id) ? 1 : 0.3);
+    });
+    nodeEl.on("mouseleave", function () {
+      hoverIdRef.current = null;
+      nodeEl.attr("stroke", "rgba(0,0,0,0.3)").attr("stroke-width", 1).attr("opacity", 1);
+      linkEl.attr("stroke", EDGE_COLOR);
+      lblEl.attr("opacity", 1);
+    });
+    nodeEl.on("click", (e, d) => { selectEntity(d.id); setDetailNode(d); });
     svg.on("click", (e) => {
       if (e.target === svgRef.current) { selectEntity(""); setDetailNode(null); }
     });
 
-    // Tick
-    sim.on("tick", () => {
-      linkEl.attr("d", (d: any) => `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`);
-      lblEl.each(function (d: any) {
-        const mx = (d.source.x + d.target.x) / 2, my = (d.source.y + d.target.y) / 2;
-        const t = d3.select(this).select("text").text();
-        if (t) {
-          const w = t.length * 5 + 8, h = 14;
-          d3.select(this).select("rect").attr("x", mx - w / 2).attr("y", my - h / 2).attr("width", w).attr("height", h);
-          d3.select(this).select("text").attr("x", mx).attr("y", my);
-        }
+    // ── Render loop ──
+    const draw = () => {
+      const sim = simRef.current;
+      if (!sim) return;
+
+      // Physics tick
+      if (!(sim.frozen && !dragIdRef.current)) {
+        tick(sim, W, H);
+      }
+
+      // Update positions
+      nodeEl.attr("cx", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
+        .attr("cy", (d: any) => sim.nodes.get(d.id)?.y ?? 0);
+      lblEl.attr("x", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
+        .attr("y", (d: any) => (sim.nodes.get(d.id)?.y ?? 0) + 10);
+      linkEl.attr("d", (d: any) => {
+        const s = sim.nodes.get(d.source as string);
+        const t = sim.nodes.get(d.target as string);
+        return s && t ? `M${s.x},${s.y}L${t.x},${t.y}` : "";
       });
-      nodeEl.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y);
-      nlEl.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y);
-    });
 
-    return () => { sim.stop(); simRef.current = null; };
-  }, [dataKey, dims, selectEntity]);
+      animFrameRef.current = requestAnimationFrame(draw);
+    };
+    animFrameRef.current = requestAnimationFrame(draw);
 
-  // Selected node ring
+    return () => {
+      cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [dataKey, dims]);
+
+  // ── Update physics config live (no re-simulation) ──
   useEffect(() => {
-    const s = d3.select(svgRef.current!);
-    s.selectAll("circle").attr("stroke", (d: any) => {
-      if (d.id === selectedId) return SEL_RING;
-      return "rgba(0,0,0,0.3)";
-    }).attr("stroke-width", (d: any) => d.id === selectedId ? 4 : 1);
+    const sim = simRef.current;
+    if (!sim) return;
+    const s = graphSettings;
+    sim.config.centering = (s.centerForce || 1) * 0.006;
+    sim.config.repulsion = 3000 * (s.repelForce || 3);
+    sim.config.attraction = 0.008 * (s.attractForce || 3);
+    sim.config.linkDistance = 80 * (s.linkLength || 0.5);
+    sim.config.dragForce = s.dragForce || 8;
+    sim.alpha = 1.0;
+    sim.frozen = false;
+    sim.convergenceFrames = 0;
+  }, [graphSettings]);
+
+  // ── Visual settings live update ──
+  const visRef = useRef(graphSettings);
+  useEffect(() => {
+    const prev = visRef.current;
+    visRef.current = graphSettings;
+    const svg = d3.select(svgRef.current!);
+    const s = graphSettings;
+    if (prev.nodeSize !== s.nodeSize) {
+      svg.selectAll("circle").attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5));
+    }
+    if (prev.linkThickness !== s.linkThickness) {
+      svg.selectAll(".links path").attr("stroke-width", (s.linkThickness ?? 1.25) * 0.4);
+    }
+    if (prev.textOpacity !== s.textOpacity) {
+      svg.selectAll(".labels text").attr("opacity", s.textOpacity ?? 0.85);
+    }
+  }, [graphSettings]);
+
+  // Selected ring update + zoom to node
+  useEffect(() => {
+    const svg = d3.select(svgRef.current!);
+    svg.selectAll("circle")
+      .attr("stroke", (d: any) => d.id === selectedId ? SEL_RING : "rgba(0,0,0,0.3)")
+      .attr("stroke-width", (d: any) => d.id === selectedId ? 4 : 1);
+
+    // Zoom to selected node
+    if (selectedId && simRef.current) {
+      const sim = simRef.current;
+      const sn = sim.nodes.get(selectedId);
+      if (sn) {
+        const W = dims.w, H = dims.h;
+        const tx = W / 2 - sn.x! * 2.5;
+        const ty = H / 2 - sn.y! * 2.5;
+        const g = svg.select("g");
+        g.transition().duration(500)
+          .attr("transform", `translate(${tx},${ty}) scale(2.5)`);
+        transformRef.current = { x: tx, y: ty, k: 2.5 };
+      }
+    }
   }, [selectedId]);
 
   const detailEntity = useMemo(() => {
@@ -296,4 +351,14 @@ export function ForceGraph2DWrapper() {
       )}
     </div>
   );
+}
+
+function screenToWorld(e: MouseEvent, svg: SVGSVGElement, t: { x: number; y: number; k: number }): { x: number; y: number } | null {
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return null;
+  const p = pt.matrixTransform(ctm.inverse());
+  return { x: (p.x - t.x) / t.k, y: (p.y - t.y) / t.k };
 }

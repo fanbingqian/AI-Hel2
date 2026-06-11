@@ -62,8 +62,12 @@
 /* ── Config grid ── */
 .configGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .configField { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #999; }
-.configField input { background: #252525; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
-.configField input:focus { border-color: #3b5fd9; outline: none; }
+.configField input, .configField select { background: #252525; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 7px 10px; font-size: 13px; font-family: inherit; width: 100%; }
+.configField input:focus, .configField select:focus { border-color: #3b5fd9; outline: none; }
+.verifyBtn { padding: 4px 10px; font-size: 11px; background: transparent; border: 1px solid #444; border-radius: 4px; color: #808080; cursor: pointer; font-family: inherit; margin-top: 6px; }
+.verifyBtn:hover { color: #07c160; border-color: #07c160; }
+.verifyOk { color: #07c160; font-size: 11px; margin-top: 4px; }
+.verifyErr { color: #f87171; font-size: 11px; margin-top: 4px; }
 
 /* ── Model management ── */
 .modelSection { display: flex; flex-direction: column; gap: 8px; }

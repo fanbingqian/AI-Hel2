@@ -1,13 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "AI-Hel2",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "identifier": "com.aihel2.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build && powershell -Command \"Compress-Archive -Path src-tauri\\hermes-agent\\* -DestinationPath src-tauri\\hermes-agent.zip -Force\""
   },
   "app": {
     "windows": [
@@ -39,38 +41,21 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "hermes-agent/*.py",
-      "hermes-agent/*.toml",
-      "hermes-agent/hermes_cli/*.py",
-      "hermes-agent/agent/*.py",
-      "hermes-agent/agent/**/*.py",
-      "hermes-agent/tools/*.py",
-      "hermes-agent/tools/**/*.py",
-      "hermes-agent/providers/*.py",
-      "hermes-agent/heimdall/*.py",
-      "hermes-agent/heimdall/**/*.py",
-      "hermes-agent/gateway/*.py",
-      "hermes-agent/cron/*.py",
-      "hermes-agent/plugins/*.py",
-      "hermes-agent/plugins/**/*.py",
-      "hermes-agent/skills/**/*.md",
-      "hermes-agent/skills/**/*.py",
-      "hermes-agent/optional-skills/**/*.md",
-      "hermes-agent/optional-skills/**/*.py",
-      "hermes-agent/acp_adapter/*.py",
-      "hermes-agent/venv/**/*",
-      "hermes-agent/python/*.exe",
-      "hermes-agent/python/*.dll",
-      "hermes-agent/python/*.pyd",
-      "hermes-agent/python/*.cat",
-      "hermes-agent/python/*.zip",
-      "hermes-agent/python/*._pth",
-      "hermes-agent/python/Lib/**/*"
+      "hermes-agent.zip"
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "perMachine"
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVCQjE2NDhGQkNGQ0RDNUIKUldSYjNQeThqMlN4NjByLy9UWndENkh2LzM4Vi9oNWhnMEU0d09IZTlzQnR5cFFGVkpibDYvcHoK",
+      "endpoints": [
+        "https://github.com/fanbingqian/AI-Hel2/releases/latest/download/latest.json"
+      ]
     }
   }
 }

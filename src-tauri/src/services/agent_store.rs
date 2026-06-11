@@ -66,6 +66,7 @@ impl AgentStore {
                 models: vec!["claude-sonnet-4-6".into(), "deepseek-v4-pro".into()],
                 vision_models: vec![],
                 reasoning_models: vec![],
+                ..Default::default()
             },
             detected: None,
             detected_path: None,

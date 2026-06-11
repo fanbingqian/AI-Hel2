@@ -72,12 +72,15 @@ def get_llm_config():
     # Resolve base_url from provider if not explicitly set
     if not base_url:
         provider_urls = {
-            "anthropic": "https://api.anthropic.com/v1",
-            "openai": "https://api.openai.com/v1",
-            "deepseek": "https://api.deepseek.com/v1",
-            "hermes_builtin": "http://127.0.0.1:18642/v1",
+            "anthropic": "https://api.anthropic.com",
+            "openai": "https://api.openai.com",
+            "deepseek": "https://api.deepseek.com",
+            "hermes_builtin": "http://127.0.0.1:18642",
         }
-        base_url = provider_urls.get(provider, "https://api.anthropic.com/v1")
+        base_url = provider_urls.get(provider, "https://api.anthropic.com")
+    # Ensure /v1 suffix for OpenAI-compatible API calls
+    if base_url and not base_url.rstrip("/").endswith("/v1"):
+        base_url = base_url.rstrip("/") + "/v1"
 
     return {
         "mode": mode,

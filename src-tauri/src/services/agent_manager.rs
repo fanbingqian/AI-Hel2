@@ -60,6 +60,7 @@ pub struct AgentManager {
     api_url: String,
     gateway_start_time: Mutex<Option<Instant>>,
     consecutive_failures: AtomicU32,
+    resource_dir: Mutex<Option<PathBuf>>,
 }
 
 impl AgentManager {
@@ -73,7 +74,13 @@ impl AgentManager {
             api_url,
             gateway_start_time: Mutex::new(None),
             consecutive_failures: AtomicU32::new(0),
+            resource_dir: Mutex::new(None),
         }
+    }
+
+    pub fn set_resource_dir(&self, dir: PathBuf) {
+        let mut rd = self.resource_dir.lock().unwrap();
+        *rd = Some(dir);
     }
 
     pub fn port(&self) -> u16 {
@@ -87,30 +94,86 @@ impl AgentManager {
     /// Resolve the application root directory.
     /// Checks multiple locations: exe-relative (production), cargo target parent (dev),
     /// and a hardcoded fallback.
-    fn app_dir() -> Option<PathBuf> {
+    fn app_dir(&self) -> Option<PathBuf> {
         let exe = std::env::current_exe().ok()?;
         let exe_dir = exe.parent()?;
 
-        let candidates: Vec<PathBuf> = vec![
+        let mut candidates: Vec<PathBuf> = vec![
             // production: hermes-agent/ next to the exe
             exe_dir.to_path_buf(),
-            // cargo run: target/debug/../../ or target/release/../../
-            exe_dir.join("..").join(".."),
-            exe_dir.join("..").join("..").join(".."),
-            // Project root relative to Cargo.toml (src-tauri/)
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."),
         ];
+
+        // Tauri resource directory (bundled resources extracted here)
+        if let Some(rd) = self.resource_dir.lock().ok().and_then(|r| r.clone()) {
+            candidates.push(rd);
+        }
+
+        // cargo run: target/debug/../../ or target/release/../../
+        candidates.push(exe_dir.join("..").join(".."));
+        candidates.push(exe_dir.join("..").join("..").join(".."));
+        // Project root relative to Cargo.toml (src-tauri/)
+        candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."));
 
         for dir in &candidates {
             let agent_dir = dir.join("hermes-agent");
-            if agent_dir.exists() && agent_dir.join("hermes_cli").join("main.py").exists() {
+            let main_py = agent_dir.join("hermes_cli").join("main.py");
+            log::info!("[AgentManager] Checking: {} → exists={} main_py={}",
+                agent_dir.display(), agent_dir.exists(), main_py.exists());
+            if agent_dir.exists() && main_py.exists() {
                 let canonical = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone());
-                log::info!("Detected app directory: {}", canonical.display());
+                log::info!("[AgentManager] FOUND at: {}", canonical.display());
                 return Some(canonical);
             }
         }
 
+        // Last resort: try to extract from bundled ZIP
+        // Check both resource dir AND exe dir for the ZIP
+        let zip_dirs: Vec<PathBuf> = {
+            let mut dirs = Vec::new();
+            dirs.push(exe_dir.to_path_buf()); // D:\ where exe lives
+            if let Some(rd) = self.resource_dir.lock().ok().and_then(|r| r.clone()) {
+                dirs.push(rd); // C:\Users\...\AppData\Local\...
+            }
+            dirs
+        };
+        for zip_dir in &zip_dirs {
+            if let Some(dir) = self.extract_agent_zip(zip_dir) {
+                return Some(dir);
+            }
+        }
+
+        log::error!("[AgentManager] hermes-agent NOT FOUND in any candidate directory");
         None
+    }
+
+    /// Extract hermes-agent.zip from resource dir to data dir on first run.
+    fn extract_agent_zip(&self, resource_dir: &std::path::Path) -> Option<PathBuf> {
+        let zip_path = resource_dir.join("hermes-agent.zip");
+        if !zip_path.exists() {
+            return None;
+        }
+        let target_dir = resource_dir.join("hermes-agent");
+        // Always re-extract: the ZIP might be newer (e.g., after update)
+        if target_dir.exists() {
+            let _ = fs::remove_dir_all(&target_dir);
+        }
+
+        log::info!("[AgentManager] Extracting {} to {} ...", zip_path.display(), target_dir.display());
+        let file = match std::fs::File::open(&zip_path) {
+            Ok(f) => f,
+            Err(e) => { log::error!("[AgentManager] Cannot open ZIP: {}", e); return None; }
+        };
+        let mut archive = match zip::ZipArchive::new(file) {
+            Ok(a) => a,
+            Err(e) => { log::error!("[AgentManager] Cannot read ZIP: {}", e); return None; }
+        };
+        log::info!("[AgentManager] ZIP has {} files", archive.len());
+        if let Err(e) = archive.extract(&target_dir) {
+            log::error!("[AgentManager] Failed to extract: {}", e);
+            return None;
+        }
+        log::info!("[AgentManager] Extracted {} files to {}", archive.len(), target_dir.display());
+        Some(resource_dir.to_path_buf())
     }
 
     /// Detect the Python executable path.
@@ -119,7 +182,7 @@ impl AgentManager {
         let scripts = if cfg!(windows) { "Scripts" } else { "bin" };
 
         // Priority 0: Embedded portable Python (no venv, no paths — truly portable)
-        if let Some(app_dir) = Self::app_dir() {
+        if let Some(app_dir) = self.app_dir() {
             let embedded = app_dir.join("hermes-agent").join("python").join("python.exe");
             if embedded.exists() {
                 log::info!("Using embedded Python: {}", embedded.display());
@@ -128,7 +191,7 @@ impl AgentManager {
         }
 
         // Priority 1: Bundled hermes-agent/venv in app directory
-        if let Some(app_dir) = Self::app_dir() {
+        if let Some(app_dir) = self.app_dir() {
             let bundled_venv = app_dir.join("hermes-agent").join("venv");
             if cfg!(windows) {
                 let pythonw = bundled_venv.join(scripts).join("pythonw.exe");
@@ -172,7 +235,7 @@ impl AgentManager {
         let mut candidates: Vec<PathBuf> = Vec::new();
 
         // Priority 1: Bundled hermes-agent in app directory
-        if let Some(app_dir) = Self::app_dir() {
+        if let Some(app_dir) = self.app_dir() {
             candidates.push(
                 app_dir.join("hermes-agent").join("hermes_cli").join("main.py")
             );
@@ -200,48 +263,64 @@ impl AgentManager {
     /// Spawn the agent gateway process.
     /// Uses the dedicated Python venv at D:\\hermes-agent-forAI-Hel2\\.venv
     fn spawn_agent(&self) -> Result<Child, String> {
+        // Check dev venv first (dev machine only)
         let venv_python = PathBuf::from(r"D:\hermes-agent-forAI-Hel2\.venv\Scripts\python.exe");
-        let program: PathBuf;
-        let args: Vec<&str>;
-
-        if venv_python.exists() {
-            program = venv_python;
-            args = vec!["-m", "hermes_cli.main", "gateway", "run", "--replace"];
+        let python = if venv_python.exists() {
+            venv_python
         } else {
-            // Fallback: system hermes CLI
-            let python = self.python_path();
-            log::info!("D:\\hermes-agent-forAI-Hel2 venv not found, falling back to {}", python.display());
-            program = python;
-            args = vec!["-m", "hermes_cli.main", "gateway", "run", "--replace"];
+            self.python_path()
+        };
+        log::info!("Spawning Agent with Python: {}", python.display());
+
+        let mut cmd = Command::new(&python);
+        // Use absolute script path to bypass Python module import issues
+        if let Some(script) = self.find_agent_script() {
+            let script_path = script.to_string_lossy().trim_start_matches("\\\\?\\").to_string();
+            cmd.arg(&script_path).arg("gateway").arg("run").arg("--replace");
+        } else {
+            cmd.args(["-m", "hermes_cli.main", "gateway", "run", "--replace"]);
         }
 
-        log::info!("Spawning Agent: {} {}", program.display(), args.join(" "));
-
-        let mut cmd = Command::new(&program);
-        cmd.args(&args);
-
-        cmd.stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .stdin(std::process::Stdio::null());
+        // Redirect stdout/stderr to log file for debugging
+        let stderr_log = self.hermes_home.join("gateway-stderr.log");
+        let log_file = fs::File::create(&stderr_log).ok();
+        if let Some(f) = log_file {
+            cmd.stdout(std::process::Stdio::from(f.try_clone().unwrap()))
+                .stderr(std::process::Stdio::from(f))
+                .stdin(std::process::Stdio::null());
+        } else {
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .stdin(std::process::Stdio::null());
+        }
+        log::info!("Agent stderr log: {}", stderr_log.display());
 
         #[cfg(windows)]
         {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        // Pass HERMES_HOME so the gateway finds config.yaml and .env
-        // Prefer D:\ai-hel2-data; fall back to C:\.ai-hel2
-        let hermes_home = if std::path::Path::new(r"D:\ai-hel2-data").exists() {
-            r"D:\ai-hel2-data"
-        } else {
-            self.hermes_home.to_str().unwrap_or(r"C:\Users\58451\.ai-hel2")
-        };
-        cmd.env("HERMES_HOME", hermes_home);
-        // Safety net: override config.yaml model settings so even if
-        // config is corrupted/reverted, the gateway uses the right provider
-        cmd.env("HERMES_INFERENCE_PROVIDER", "deepseek");
-        cmd.env("API_SERVER_MODEL_NAME", "deepseek-v4-flash");
+        // Set PYTHONPATH so Python can find hermes_cli package
+        if let Some(app_dir) = self.app_dir() {
+            let agent_dir = app_dir.join("hermes-agent");
+            if agent_dir.exists() {
+                // Strip \\?\ prefix from canonicalized paths - Python doesn't handle it
+                let pythonpath = agent_dir.to_string_lossy().trim_start_matches("\\\\?\\").to_string();
+                cmd.env("PYTHONPATH", &pythonpath);
+                log::info!("PYTHONPATH={}", pythonpath);
+            }
+        }
+
+        // HERMES_HOME: use configured home directory
+        cmd.env("HERMES_HOME", self.hermes_home.to_str().unwrap_or("."));
+        // Allow open access on localhost (no user auth required)
+        cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
+
+        // Default provider settings (overridden by config.yaml if present)
         cmd.env("API_SERVER_KEY", "aihel2-local-dev");
+        cmd.env("HERMES_INFERENCE_PROVIDER", "deepseek");
+        cmd.env("HERMES_INFERENCE_MODEL", "deepseek-v4-flash");
+        cmd.env("API_SERVER_MODEL_NAME", "deepseek-v4-flash");
 
         // Force Git Bash over WSL bash on Windows
         #[cfg(windows)]
@@ -302,7 +381,7 @@ impl AgentManager {
         None
     }
 
-    /// Quick health check — non-blocking HTTP GET to /health.
+    /// Quick health check — HTTP GET to /health with Bearer auth (API server requires it).
     pub fn health_check(&self) -> Result<bool, String> {
         let url = format!("{}/health", self.api_url);
         let client = reqwest::blocking::Client::builder()
@@ -312,7 +391,10 @@ impl AgentManager {
 
         match client.get(&url).send() {
             Ok(resp) => Ok(resp.status().is_success()),
-            Err(_) => Ok(false),
+            Err(e) => {
+                log::warn!("Health check failed: {}", e);
+                Ok(false)
+            },
         }
     }
 
@@ -426,16 +508,41 @@ impl AgentManager {
 
     /// Start the agent: spawn process, then poll /health until ready or timeout.
     pub fn start(&self) -> Result<(), String> {
+        let log_path = self.hermes_home.join("aihel2-startup.log");
+        let mut log_file = fs::File::create(&log_path).ok();
+        let mut log = |msg: &str| {
+            if let Some(ref mut f) = log_file {
+                let line = format!("{} {}\n", chrono::Local::now().format("%H:%M:%S"), msg);
+                let _ = f.write_all(line.as_bytes());
+            }
+            log::info!("{}", msg);
+        };
+
+        log(&format!("=== AI-Hel2 Agent Startup ==="));
+        log(&format!("HERMES_HOME: {}", self.hermes_home.display()));
+        log(&format!("Port: {}", self.port));
+        log(&format!("exe path: {:?}", std::env::current_exe()));
+
         if self.health_check().unwrap_or(false) {
-            log::info!("Agent already running on port {}", self.port);
+            log("Agent already running");
             return Ok(());
         }
 
-        // Auto-configure API server in config.yaml if missing (upstream hermes.ts:130-150)
+        // Auto-configure API server
         self.ensure_api_server_config();
+        self.ensure_dot_env();
+        log(&format!("config.yaml exists: {}", self.hermes_home.join("config.yaml").exists()));
+
+        let python = self.python_path();
+        log(&format!("Python path: {}", python.display()));
+        log(&format!("Python exists: {}", python.exists()));
+
+        let script = self.find_agent_script();
+        log(&format!("Agent script: {:?}", script));
+        log(&format!("Script exists: {}", script.as_ref().map(|s| s.exists()).unwrap_or(false)));
 
         let child = self.spawn_agent()?;
-        log::info!("Agent spawned (pid={})", child.id());
+        log(&format!("Agent spawned (pid={})", child.id()));
 
         {
             let mut guard = self.child.lock().map_err(|e| e.to_string())?;
@@ -447,7 +554,27 @@ impl AgentManager {
             *t = Some(Instant::now());
         }
 
-        self.wait_until_ready(Duration::from_secs(STARTUP_TIMEOUT_SECS))
+        // Inline health polling with logged errors
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(STARTUP_TIMEOUT_SECS) {
+            let url = format!("{}/health", self.api_url);
+            match reqwest::blocking::Client::builder()
+                .timeout(Duration::from_millis(HEALTH_CHECK_TIMEOUT_MS))
+                .build()
+            {
+                Ok(client) => match client.get(&url).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        log(&format!("Agent ready ({:.1}s)", start.elapsed().as_secs_f32()));
+                        return Ok(());
+                    }
+                    Ok(resp) => log(&format!("Health returned {}", resp.status())),
+                    Err(e) => log(&format!("Health check error: {}", e)),
+                },
+                Err(e) => log(&format!("HTTP client error: {}", e)),
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        Err("Agent did not become ready".to_string())
     }
 
     /// Returns true if the gateway was started within the last 8 seconds.
@@ -466,30 +593,65 @@ impl AgentManager {
     /// If api_server section is missing, append it.
     fn ensure_api_server_config(&self) {
         let config_path = self.hermes_home.join("config.yaml");
-        if !config_path.exists() {
-            return;
+        let content = fs::read_to_string(&config_path).unwrap_or_default();
+        let our_port = format!("port: {}", self.port);
+        if content.contains("api_server") && content.contains(&our_port) {
+            return; // Already configured with correct port
         }
-        let content = match fs::read_to_string(&config_path) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        if content.contains("api_server") {
-            return;
-        }
-        let addition = format!(
-            "\n# Desktop app API server (auto-configured by AI-Hel2)\n\
-             platforms:\n  api_server:\n    enabled: true\n    extra:\n\
-             \x20     port: {}\n      host: \"127.0.0.1\"\n\
-             \x20     key: \"aihel2-local-dev\"\n\
-             \x20     model_name: \"deepseek-v4-flash\"\n",
+
+        let api_cfg = format!(
+            "platforms:\n  api_server:\n    enabled: true\n    extra:\n      port: {}\n      host: \"127.0.0.1\"\n      key: \"aihel2-local-dev\"\n      model_name: \"deepseek-v4-flash\"\n",
             self.port
         );
-        if let Err(e) = fs::OpenOptions::new().append(true).open(&config_path)
-            .and_then(|mut f| f.write_all(addition.as_bytes()))
-        {
-            log::warn!("Failed to auto-configure api_server in config.yaml: {e}");
+
+        if content.is_empty() {
+            let _ = fs::create_dir_all(self.hermes_home.as_path());
+            // Include default model + toolsets so the Gateway has full capabilities
+            let full_cfg = format!(
+                "model:\n  default: deepseek-v4-flash\n  max_tokens: 8192\n\
+                 agent:\n  toolsets:\n    - hermes-cli\n    - search\n    - memory\n    - file\n    - nexus\n\
+                 platform_toolsets:\n  api_server:\n    - hermes-cli\n    - search\n    - memory\n    - file\n    - nexus\n\n{}",
+                api_cfg
+            );
+            if let Err(e) = fs::write(&config_path, &full_cfg) {
+                log::warn!("Failed to create config.yaml: {e}");
+            } else {
+                log::info!("Created config.yaml with api_server on port {}", self.port);
+            }
         } else {
-            log::info!("Auto-configured api_server in config.yaml (port {})", self.port);
+            // Also ensure toolsets are present for existing configs
+            let mut append = String::new();
+            if !content.contains("platform_toolsets:") {
+                append.push_str("\nagent:\n  toolsets:\n    - hermes-cli\n    - search\n    - memory\n    - file\n    - nexus\nplatform_toolsets:\n  api_server:\n    - hermes-cli\n    - search\n    - memory\n    - file\n    - nexus\n");
+            }
+            append.push_str(&format!("\n# Auto-configured by AI-Hel2\n{}", api_cfg));
+            if let Err(e) = fs::OpenOptions::new().append(true).open(&config_path)
+                .and_then(|mut f| f.write_all(append.as_bytes()))
+            {
+                log::warn!("Failed to append api_server config: {e}");
+            } else {
+                log::info!("Appended api_server config on port {}", self.port);
+            }
+        }
+    }
+
+    /// Ensure .env has required Gateway settings for local access.
+    fn ensure_dot_env(&self) {
+        let env_path = self.hermes_home.join(".env");
+        let mut content = fs::read_to_string(&env_path).unwrap_or_default();
+        let mut changed = false;
+        if !content.contains("GATEWAY_ALLOW_ALL_USERS") {
+            content.push_str("\nGATEWAY_ALLOW_ALL_USERS=true\n");
+            changed = true;
+        }
+        if !content.contains("API_SERVER_KEY") {
+            content.push_str("API_SERVER_KEY=aihel2-local-dev\n");
+            changed = true;
+        }
+        if changed {
+            let _ = fs::create_dir_all(self.hermes_home.as_path());
+            let _ = fs::write(&env_path, &content);
+            log::info!("Wrote .env with Gateway settings");
         }
     }
 

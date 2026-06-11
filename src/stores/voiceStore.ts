@@ -61,7 +61,7 @@ async function ensureDeps(): Promise<boolean> {
       });
       return false;
     }
-    await invoke("prewarm_voice_model");
+    // Whisper doesn't need pre-warming
     try {
       const diag: string = await invoke("voice_diagnose");
       console.log("[Voice] Diagnostic:\n" + diag);
@@ -89,21 +89,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   depsChecking: false,
   voiceText: "",
 
-  toggleInputMode: () =>
-    set((s) => ({ inputMode: s.inputMode === "text" ? "voice" : "text" })),
+  // Toggle input mode; eagerly check voice deps when switching to voice mode
+  // so that startRecording doesn't have a slow first-call path.
+  toggleInputMode: () => {
+    const next = get().inputMode === "text" ? "voice" : "text";
+    set({ inputMode: next });
+    if (next === "voice") {
+      ensureDeps();
+    }
+  },
 
+  // Start recording — now fast because deps are checked eagerly.
+  // The Rust backend spawns a background recording thread that runs until
+  // stop_ptt_recording signals it to stop.
   startRecording: async (source) => {
     const { status } = get();
     if (status !== "idle") return;
-    // Set listening immediately so stopRecording/cancelRecording can see it
     setStatus(set, "listening", { error: null, voiceSource: source, transcribedText: "", voiceText: "" });
-    const ok = await ensureDeps();
-    if (!ok) {
-      setStatus(set, "idle");
-      return;
+    // Only awaits deps on the very first call (cold path); subsequent calls skip.
+    if (!depsChecked) {
+      const ok = await ensureDeps();
+      if (!ok) {
+        setStatus(set, "idle");
+        return;
+      }
     }
     try {
-      await invoke("voice_start_listening");
+      await invoke("start_ptt_recording");
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error).message || "语音启动失败";
       setStatus(set, "idle", { error: msg });
@@ -115,7 +127,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     if (status !== "listening") return;
     setStatus(set, "transcribing");
     try {
-      const text: string = await invoke("voice_stop_listening");
+      const text: string = await invoke("stop_ptt_recording");
       const trimmed = text.trim();
       if (trimmed) {
         setStatus(set, "preview", { transcribedText: trimmed, voiceText: trimmed });
@@ -130,7 +142,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
   cancelRecording: () => {
     if (get().status === "listening") {
-      invoke("voice_stop_listening").catch(() => {});
+      invoke("cancel_ptt_recording").catch(() => {});
     }
     setStatus(set, "idle", { transcribedText: "", voiceText: "", error: null });
   },
@@ -164,19 +176,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     const { status } = get();
     if (status !== "idle") return;
     setStatus(set, "listening", { error: null, voiceSource: source, transcribedText: "", voiceText: "" });
-    const ok = await ensureDeps();
-    if (!ok) {
-      setStatus(set, "idle");
-      return;
+    if (!depsChecked) {
+      const ok = await ensureDeps();
+      if (!ok) {
+        setStatus(set, "idle");
+        return;
+      }
     }
     try {
-      const text: string = await invoke("voice_listen_once");
-      const trimmed = text.trim();
-      if (trimmed) {
-        setStatus(set, "preview", { transcribedText: trimmed, voiceText: trimmed });
-      } else {
-        setStatus(set, "idle", { error: "未检测到语音" });
-      }
+      await invoke("start_ptt_recording");
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error).message || "语音识别失败";
       setStatus(set, "idle", { error: msg });

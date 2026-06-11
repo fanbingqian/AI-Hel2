@@ -6,6 +6,7 @@ pub mod config;
 pub mod knowledge;
 pub mod session;
 pub mod voice;
+pub mod voice_overlay;
 pub mod files;
 pub mod gateway;
 pub mod wiki;

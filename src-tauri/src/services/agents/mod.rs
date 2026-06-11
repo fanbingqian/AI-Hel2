@@ -29,7 +29,7 @@ pub struct AgentConfig {
     pub added_manually: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentConnectionConfig {
     pub base_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -40,6 +40,10 @@ pub struct AgentConnectionConfig {
     pub vision_models: Vec<String>,
     #[serde(default)]
     pub reasoning_models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision_base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_base_url: Option<String>,
 }
 
 /// Sanitized agent info for the frontend (no api_key).
@@ -57,6 +61,8 @@ pub struct AgentInfo {
     pub added_manually: bool,
     pub status: AgentStatus,
     pub base_url: String,
+    pub vision_base_url: Option<String>,
+    pub reasoning_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -142,6 +148,8 @@ impl AgentRegistry {
                     AgentStatus::Offline
                 },
                 base_url: c.config.base_url,
+                vision_base_url: c.config.vision_base_url.clone(),
+                reasoning_base_url: c.config.reasoning_base_url.clone(),
             });
         }
         infos
@@ -164,28 +172,49 @@ impl AgentRegistry {
         models: Option<Vec<String>>,
         vision_models: Option<Vec<String>>,
         reasoning_models: Option<Vec<String>>,
+        vision_base_url: Option<String>,
+        reasoning_base_url: Option<String>,
+        vision_api_key: Option<String>,
+        reasoning_api_key: Option<String>,
     ) -> Result<(), String> {
         let mut configs = self.store.load_or_seed()?;
         let c = configs
             .iter_mut()
             .find(|c| c.id == id)
             .ok_or_else(|| format!("Agent not found: {id}"))?;
-        if let Some(url) = base_url {
-            c.config.base_url = url;
-        }
-        if let Some(key) = api_key {
-            c.config.api_key = if key.is_empty() { None } else { Some(key) };
-        }
-        if let Some(m) = models {
-            c.config.models = m;
-        }
-        if let Some(v) = vision_models {
-            c.config.vision_models = v;
-        }
-        if let Some(r) = reasoning_models {
-            c.config.reasoning_models = r;
-        }
+        if let Some(url) = base_url { c.config.base_url = url; }
+        if let Some(key) = api_key { c.config.api_key = if key.is_empty() { None } else { Some(key) }; }
+        if let Some(m) = models { c.config.models = m; }
+        if let Some(v) = vision_models { c.config.vision_models = v; }
+        if let Some(r) = reasoning_models { c.config.reasoning_models = r; }
+        if let Some(v) = vision_base_url { c.config.vision_base_url = if v.is_empty() { None } else { Some(v) }; }
+        if let Some(r) = reasoning_base_url { c.config.reasoning_base_url = if r.is_empty() { None } else { Some(r) }; }
+        // Write vision/reasoning API keys to .env
+        if let Some(key) = &vision_api_key { if !key.is_empty() { self.write_env_key("VISION", key); } }
+        if let Some(key) = &reasoning_api_key { if !key.is_empty() { self.write_env_key("REASONING", key); } }
         self.store.save(&configs)
+    }
+
+    fn write_env_key(&self, suffix: &str, key: &str) {
+        let home = std::env::var("AI_HEL2_HOME").ok()
+            .or_else(|| std::env::var("HERMES_HOME").ok())
+            .unwrap_or_else(|| {
+                #[cfg(target_os = "windows")]
+                { format!("{}\\.ai-hel2", std::env::var("USERPROFILE").unwrap_or_else(|_| "C:".into())) }
+                #[cfg(not(target_os = "windows"))]
+                { format!("{}/.ai-hel2", std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())) }
+            });
+        let env_path = std::path::PathBuf::from(&home).join(".env");
+        let content = std::fs::read_to_string(&env_path).unwrap_or_default();
+        let env_key = format!("HERMES_{}_API_KEY", suffix);
+        let lines: Vec<&str> = content.lines()
+            .filter(|l| !l.trim_start().starts_with(&format!("{}=", env_key)))
+            .collect();
+        let mut nc = lines.join("\n");
+        if !nc.ends_with('\n') { nc.push('\n'); }
+        nc.push_str(&format!("{}={}\n", env_key, key.trim()));
+        let _ = std::fs::create_dir_all(&home);
+        let _ = std::fs::write(&env_path, &nc);
     }
 
     /// Remove an agent by id.

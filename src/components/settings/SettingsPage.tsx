@@ -742,36 +742,70 @@ function VoiceSection() {
 function UpdateSection() {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState("");
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [installing, setInstalling] = useState(false);
 
   const handleCheck = async () => {
     setChecking(true);
     setResult("");
     try {
-      // Use Tauri updater if available, otherwise show current version
-      setResult("当前已是最新版本 (0.1.0)");
-    } catch {
-      setResult("检查更新失败，请稍后重试");
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (update) {
+        setUpdateAvailable(true);
+        setUpdateInfo(update);
+        const sizeMB = (((update as any).contentLength || 0) / 1024 / 1024).toFixed(1);
+        setResult(`发现新版本 ${update.version}，大小 ${sizeMB} MB`);
+      } else {
+        setUpdateAvailable(false);
+        setResult("当前已是最新版本");
+      }
+    } catch (err: any) {
+      setResult(`检查更新失败: ${err?.message || err}`);
     }
     setChecking(false);
+  };
+
+  const handleInstall = async () => {
+    if (!updateInfo) return;
+    setInstalling(true);
+    setResult("正在下载更新...");
+    try {
+      let downloaded = 0;
+      await updateInfo.download((e: any) => {
+        if (e.event === "Progress") {
+          const pct = (updateInfo as any).contentLength ? ((e.data.contentLength / (updateInfo as any).contentLength) * 100).toFixed(0) : "?";
+          setResult(`下载中... ${pct}%`);
+        }
+      });
+      setResult("正在安装更新，应用将自动重启...");
+      await updateInfo.install();
+    } catch (err: any) {
+      setResult(`安装失败: ${err?.message || err}`);
+    }
+    setInstalling(false);
   };
 
   return (
     <div className={styles.section}>
       <h2 className={styles.sectionTitle}>更新</h2>
       <div className={styles.fieldGroup}>
-        <label className={styles.toggle} style={{ cursor: "pointer" }}>
-          <span className={styles.toggleLabel}>自动检查更新</span>
-        </label>
-        <div className={styles.desc}>启动时自动检查新版本</div>
-      </div>
-      <div className={styles.fieldGroup}>
         <div className={styles.desc} style={{ marginBottom: 8 }}>
-          当前版本: 0.1.0 | 最新: 0.1.0（已是最新）
+          当前版本: 0.1.0
         </div>
-        <button className={styles.btnPrimary} onClick={handleCheck} disabled={checking}>
-          {checking ? "检查中..." : "检查更新"}
-        </button>
-        {result && <div className={styles.desc} style={{ marginTop: 8, color: "#07c160" }}>{result}</div>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className={styles.btnPrimary} onClick={handleCheck} disabled={checking}>
+            {checking ? "检查中..." : "检查更新"}
+          </button>
+          {updateAvailable && (
+            <button className={styles.btnPrimary} onClick={handleInstall} disabled={installing}
+              style={{ background: "#07c160", borderColor: "#07c160" }}>
+              {installing ? "安装中..." : "立即更新"}
+            </button>
+          )}
+        </div>
+        {result && <div className={styles.desc} style={{ marginTop: 8, color: updateAvailable ? "#f59e0b" : "#07c160" }}>{result}</div>}
       </div>
     </div>
   );
@@ -830,7 +864,6 @@ function MigrationSection() {
 
 function NexusSection() {
   const [nexusConfig, setNexusConfig] = useState<any>(null);
-  const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
@@ -839,9 +872,14 @@ function NexusSection() {
   const [runningTask, setRunningTask] = useState<string | null>(null);
   const [taskResult, setTaskResult] = useState<any>(null);
 
+  // Server health state
+  const [serverHealth, setServerHealth] = useState<{ running: boolean; port: number; url: string } | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+
   useEffect(() => {
     invoke("get_nexus_config").then(setNexusConfig).catch(() => {});
     refreshMaintenanceStatus();
+    refreshServerHealth();
   }, []);
 
   const refreshMaintenanceStatus = async () => {
@@ -849,6 +887,17 @@ function NexusSection() {
       const s = await invoke("nexus_get_maintenance_status");
       setMaintStatus(s);
     } catch { /* ignore */ }
+  };
+
+  const refreshServerHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const h = await invoke("check_nexus_server_health");
+      setServerHealth(h as any);
+    } catch {
+      setServerHealth(null);
+    }
+    setCheckingHealth(false);
   };
 
   const handleModeChange = async (mode: string) => {
@@ -864,6 +913,7 @@ function NexusSection() {
   };
 
   const handleFieldChange = async (field: string, value: string) => {
+    if (!nexusConfig) return;
     const updated = { ...nexusConfig, [field]: value };
     setNexusConfig(updated);
   };
@@ -876,20 +926,6 @@ function NexusSection() {
       console.error("Save nexus config failed:", e);
     }
     setSaving(false);
-  };
-
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const result = await invoke("check_nexus_llm_connection", {
-        config: nexusConfig,
-      });
-      setTestResult(result);
-    } catch (e: any) {
-      setTestResult({ ok: false, error: String(e) });
-    }
-    setTesting(false);
   };
 
   const runMaintenance = async (task: string, cmd: string, args?: Record<string, unknown>) => {
@@ -909,14 +945,39 @@ function NexusSection() {
 
   if (!nexusConfig) return <div className={styles.section}><h2 className={styles.sectionTitle}>知识引擎</h2><div className={styles.emptyHint}>加载中...</div></div>;
 
-  const llmMode = nexusConfig.llm_mode || "follow_agent";
+  const llmMode = nexusConfig.llm_mode || "custom";
   const status = maintStatus;
 
   return (
     <div className={styles.section}>
       <h2 className={styles.sectionTitle}>知识引擎 (Nexus)</h2>
-      <div className={styles.desc} style={{ marginBottom: 16 }}>
+      <div className={styles.desc} style={{ marginBottom: 12 }}>
         Nexus 知识引擎负责将对话、文档自动提取为知识图谱，并维护知识库质量。
+      </div>
+
+      {/* ── Server Health Indicator ── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, marginBottom: 14,
+        padding: "8px 12px", borderRadius: 8,
+        background: serverHealth ? "#e8f5e9" : "#fdecea",
+        border: `1px solid ${serverHealth ? "#81c784" : "#ef9a9a"}`,
+      }}>
+        <span style={{
+          width: 12, height: 12, borderRadius: "50%",
+          background: serverHealth ? "#4caf50" : "#f44336",
+          display: "inline-block",
+          boxShadow: `0 0 6px ${serverHealth ? "#4caf50" : "#f44336"}`,
+        }} />
+        <span style={{ fontSize: 13, fontWeight: 500, color: serverHealth ? "#2e7d32" : "#c62828" }}>
+          {checkingHealth ? "检测中..." : serverHealth ? `服务运行中 · 端口 ${serverHealth.port}` : "服务未启动"}
+        </span>
+        <button
+          type="button"
+          onClick={refreshServerHealth}
+          style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 11, cursor: "pointer", borderRadius: 4, border: "1px solid #ccc", background: "#fff" }}
+        >
+          重新检测
+        </button>
       </div>
 
       {/* ── Maintenance Status ── */}
@@ -1105,110 +1166,37 @@ function NexusSection() {
 
       {/* ── LLM Config ── */}
       <div className={styles.dividerSm}>
-        <div className={styles.label} style={{ marginBottom: 10 }}>LLM 模式</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div className={styles.label}>独立模型配置</div>
+          <button type="button" className={styles.btnPrimary} style={{ padding: "4px 12px", fontSize: 12 }}
+            onClick={async () => {
+              try {
+                const config: any = await invoke("copy_agent_config_for_nexus");
+                const updated = {
+                  ...nexusConfig,
+                  llm_mode: "custom",
+                  llm_provider: config.llm_provider,
+                  llm_model: config.llm_model,
+                  llm_api_key: config.llm_api_key,
+                  llm_base_url: config.llm_base_url,
+                };
+                setNexusConfig(updated);
+                await invoke("save_nexus_config", { config: updated });
+              } catch {}
+            }}>
+            复制Agent配置
+          </button>
+        </div>
         <div className={styles.desc} style={{ marginBottom: 10 }}>
-          {llmMode === "follow_agent"
-            ? "跟随 Agent：自动使用聊天模型（推荐）"
-            : "独立配置：为知识提取指定独立模型"}
+          默认独立配置。点击"复制Agent配置"将聊天大模型的密钥一键填入下方。
         </div>
-        <div className={styles.pills}>
-          <button
-            className={`${styles.pill} ${llmMode === "follow_agent" ? styles.pillActive : ""}`}
-            onClick={() => handleModeChange("follow_agent")}
-          >
-            跟随 Agent
-          </button>
-          <button
-            className={`${styles.pill} ${llmMode === "custom" ? styles.pillActive : ""}`}
-            onClick={() => handleModeChange("custom")}
-          >
-            独立配置
-          </button>
-        </div>
+        <NexusProviderRow
+          nexusConfig={nexusConfig}
+          onFieldChange={handleFieldChange}
+          onVerify={(ok, msg) => setTestResult({ ok, model: nexusConfig.llm_model || "?", latency_ms: 0, message: msg })}
+        />
       </div>
 
-      {llmMode === "custom" && (
-        <div className={styles.dividerSm}>
-          <div className={styles.label} style={{ marginBottom: 10 }}>独立模型配置</div>
-          <div className={styles.fieldGroup}>
-            <label className={styles.label}>Provider</label>
-            <input
-              className={styles.textInput}
-              value={nexusConfig.llm_provider || "anthropic"}
-              onChange={(e) => handleFieldChange("llm_provider", e.target.value)}
-              onBlur={handleSave}
-              placeholder="anthropic / openai / deepseek"
-            />
-          </div>
-          <div className={styles.fieldGroup}>
-            <label className={styles.label}>Model</label>
-            <input
-              className={styles.textInput}
-              value={nexusConfig.llm_model || ""}
-              onChange={(e) => handleFieldChange("llm_model", e.target.value)}
-              onBlur={handleSave}
-              placeholder="claude-sonnet-4-6"
-            />
-          </div>
-          <div className={styles.fieldGroup}>
-            <label className={styles.label}>API Key</label>
-            <input
-              className={styles.textInput}
-              type="password"
-              value={nexusConfig.llm_api_key || ""}
-              onChange={(e) => handleFieldChange("llm_api_key", e.target.value)}
-              onBlur={handleSave}
-              placeholder="sk-ant-xxx..."
-            />
-          </div>
-          <div className={styles.fieldGroup}>
-            <label className={styles.label}>Base URL（可选）</label>
-            <input
-              className={styles.textInput}
-              value={nexusConfig.llm_base_url || ""}
-              onChange={(e) => handleFieldChange("llm_base_url", e.target.value)}
-              onBlur={handleSave}
-              placeholder="留空使用默认 https://api.anthropic.com/v1"
-            />
-            <div className={styles.desc}>自定义 API 端点或代理地址</div>
-          </div>
-        </div>
-      )}
-
-      <div className={styles.dividerSm}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-          <button
-            className={styles.btnPrimary}
-            onClick={handleTestConnection}
-            disabled={testing}
-          >
-            {testing ? "测试中..." : "测试连接"}
-          </button>
-          {saving && <span style={{ fontSize: 11, color: "#07c160" }}>已保存</span>}
-        </div>
-
-        {testResult && (
-          <div
-            style={{
-              padding: 10,
-              borderRadius: 6,
-              fontSize: 12,
-              background: testResult.ok ? "rgba(7,193,96,0.1)" : "rgba(250,81,81,0.1)",
-              border: `1px solid ${testResult.ok ? "rgba(7,193,96,0.25)" : "rgba(250,81,81,0.25)"}`,
-            }}
-          >
-            {testResult.ok ? (
-              <span style={{ color: "#07c160" }}>
-                连接成功 — {testResult.model} ({testResult.latency_ms}ms)
-              </span>
-            ) : (
-              <span style={{ color: "#fa5151" }}>
-                连接失败: {testResult.error}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -1460,6 +1448,103 @@ export default function SettingsPage() {
       <main className={styles.content}>
         <SectionContent section={activeSection} />
       </main>
+    </div>
+  );
+}
+
+// ── Nexus Provider Row (knowledge engine custom LLM) ──
+const NEXUS_PROVIDERS: { id: string; label: string; url: string; model: string }[] = [
+  { id: "deepseek", label: "DeepSeek", url: "https://api.deepseek.com", model: "deepseek-v4-pro" },
+  { id: "aigocode", label: "AIGoCode", url: "https://api.aigocode.com", model: "gpt-5.4" },
+  { id: "openai", label: "OpenAI", url: "https://api.openai.com", model: "gpt-4o" },
+  { id: "anthropic", label: "Anthropic", url: "https://api.anthropic.com", model: "claude-sonnet-4-6" },
+  { id: "google", label: "Google AI", url: "https://generativelanguage.googleapis.com", model: "gemini-2.5-flash" },
+  { id: "xai", label: "xAI", url: "https://api.x.ai", model: "grok-3" },
+  { id: "groq", label: "Groq", url: "https://api.groq.com/openai", model: "llama-4-maverick" },
+  { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api", model: "openai/gpt-4o" },
+  { id: "ollama", label: "Ollama (本地)", url: "http://localhost:11434", model: "" },
+];
+
+function NexusProviderRow({ nexusConfig, onFieldChange, onVerify }: {
+  nexusConfig: any;
+  onFieldChange: (key: string, value: string) => void;
+  onVerify: (ok: boolean, msg: string) => void;
+}) {
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<{ok: boolean; msg: string} | null>(null);
+  const sel = NEXUS_PROVIDERS.find(p => p.url === (nexusConfig.llm_base_url || ""));
+  const provider = sel?.id || nexusConfig.llm_provider || "";
+
+  const handleVerify = async () => {
+    console.log("[nexus-verify] nexusConfig:", nexusConfig);
+    const url = (nexusConfig?.llm_base_url || "").trim();
+    const key = (nexusConfig?.llm_api_key || "").trim();
+    const model = (nexusConfig?.llm_model || "").trim();
+    console.log("[nexus-verify] url:", url, "key:", key ? "***" : "(empty)", "model:", model);
+    if (!url) { setResult({ok: false, msg: "请先选择提供商"}); return; }
+    if (!key) { setResult({ok: false, msg: "请填写API Key"}); return; }
+    if (!model) { setResult({ok: false, msg: "请填写模型名称"}); return; }
+    setChecking(true); setResult({ok: false, msg: "正在验证..."});
+    try {
+      const msg = await invoke<string>("verify_api_key", { baseUrl: url, apiKey: key, model });
+      setResult({ok: true, msg: `验证成功: ${msg}`});
+    } catch (e: any) {
+      const err = typeof e === "string" ? e : (e?.message || e?.toString?.() || "验证失败");
+      console.error("[nexus-verify] error:", e);
+      setResult({ok: false, msg: `验证失败: ${err}`});
+    }
+    setChecking(false);
+  };
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className={styles.fieldGroup}>
+        <label className={styles.label}>提供商</label>
+        <select className={styles.textInput}
+          value={nexusConfig.llm_base_url || ""}
+          onChange={(e) => {
+            const p = NEXUS_PROVIDERS.find(x => x.url === e.target.value);
+            onFieldChange("llm_base_url", e.target.value || "");
+            if (p) {
+              onFieldChange("llm_provider", p.id);
+              onFieldChange("llm_model", p.model);
+            }
+          }}>
+          <option value="">自定义</option>
+          {NEXUS_PROVIDERS.map(p => (
+            <option key={p.id} value={p.url}>{p.label} — {p.url}</option>
+          ))}
+        </select>
+      </div>
+      <div className={styles.fieldGroup}>
+        <label className={styles.label}>API Key</label>
+        <input className={styles.textInput} type="password"
+          value={nexusConfig.llm_api_key || ""}
+          onChange={(e) => { onFieldChange("llm_api_key", e.target.value); }}
+          placeholder="sk-..." />
+      </div>
+      <div className={styles.fieldGroup}>
+        <label className={styles.label}>Model</label>
+        <input className={styles.textInput}
+          value={nexusConfig.llm_model || ""}
+          onChange={(e) => { onFieldChange("llm_model", e.target.value); }}
+          placeholder="deepseek-v4-pro" />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+        <button type="button" className={styles.btnPrimary} onClick={handleVerify} disabled={checking}
+          style={{ padding: "4px 12px", fontSize: 12 }}>
+          {checking ? "验证中..." : "验证连接"}
+        </button>
+        <button type="button" className={styles.btnPrimary} onClick={async () => {
+          if (!nexusConfig) { setResult({ok: false, msg: "配置未加载"}); return; }
+          try { await invoke("save_nexus_config", { config: nexusConfig }); setResult({ok: true, msg: "已保存"}); } catch(e: any) { setResult({ok: false, msg: String(e)}); }
+        }} style={{ padding: "4px 12px", fontSize: 12, background: "#444" }}>
+          保存
+        </button>
+      </div>
+      {result && (
+        <div style={{ marginTop: 6, fontSize: 12, color: result.ok ? "#07c160" : "#f87171" }}>{result.msg}</div>
+      )}
     </div>
   );
 }

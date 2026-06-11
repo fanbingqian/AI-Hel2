@@ -45,7 +45,61 @@ pub async fn update_api_key(
     api_key: String,
 ) -> Result<(), String> {
     let service = state.service.lock().map_err(|e| e.to_string())?;
-    service.set_env(&format!("{}_API_KEY", provider.to_uppercase()), &api_key)
+    let env_path = service.hermes_home().join(".env");
+    let content = fs::read_to_string(&env_path).unwrap_or_default();
+    let env_key = format!("{}_API_KEY", provider.to_uppercase());
+    let lines: Vec<&str> = content.lines()
+        .filter(|l| !l.trim_start().starts_with(&format!("{}=", env_key)))
+        .collect();
+    let mut new_content = lines.join("\n");
+    if !new_content.ends_with('\n') { new_content.push('\n'); }
+    new_content.push_str(&format!("{}={}\n", env_key, api_key.trim()));
+    let _ = fs::create_dir_all(service.hermes_home());
+    fs::write(&env_path, &new_content).map_err(|e| format!("写入 .env 失败: {e}"))
+}
+
+#[tauri::command]
+pub async fn verify_api_key(
+    base_url: String,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
+    // Auto-append /v1 if missing (Hermes format URLs omit it)
+    let base = base_url.trim_end_matches('/');
+    let url = if base.ends_with("/v1") {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1/chat/completions", base)
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 5,
+    });
+    match client.post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                Ok(format!("连接成功 (HTTP {})", status.as_u16()))
+            } else if status.as_u16() == 401 || status.as_u16() == 403 {
+                Err(format!("API Key 无效 (HTTP {})", status.as_u16()))
+            } else {
+                let body = resp.text().await.unwrap_or_default();
+                Err(format!("错误 (HTTP {}): {}", status.as_u16(), body.chars().take(200).collect::<String>()))
+            }
+        }
+        Err(e) => Err(format!("连接失败: {}", e)),
+    }
 }
 
 #[tauri::command]
@@ -207,6 +261,49 @@ pub async fn save_nexus_config(
 ) -> Result<(), String> {
     let service = state.service.lock().map_err(|e| e.to_string())?;
     service.write_nexus_config(&config)
+}
+
+#[tauri::command]
+pub async fn copy_agent_config_for_nexus(
+    state: State<'_, ConfigState>,
+) -> Result<serde_json::Value, String> {
+    let service = state.service.lock().map_err(|e| e.to_string())?;
+    let model_config = service.read_config().unwrap_or_default();
+    let env = service.read_env();
+    let mut provider = String::new();
+    let mut api_key = String::new();
+    for (key, val) in &env {
+        if key.ends_with("_API_KEY") && !val.is_empty() {
+            provider = key.trim_end_matches("_API_KEY").to_lowercase();
+            api_key = val.clone();
+            break;
+        }
+    }
+    let base_urls: std::collections::HashMap<&str, &str> = [
+        ("deepseek", "https://api.deepseek.com"),
+        ("openai", "https://api.openai.com"),
+        ("anthropic", "https://api.anthropic.com"),
+        ("aigocode", "https://api.aigocode.com"),
+        ("google", "https://generativelanguage.googleapis.com"),
+        ("xai", "https://api.x.ai"),
+        ("groq", "https://api.groq.com/openai"),
+        ("openrouter", "https://openrouter.ai/api"),
+    ].iter().cloned().collect();
+    let base_url = base_urls.get(provider.as_str()).unwrap_or(&"").to_string();
+    // model.default takes priority over model.name (Hermes gateway reads model.default)
+    let model = if !model_config.model.default.is_empty() {
+        model_config.model.default.clone()
+    } else if !model_config.model.name.is_empty() {
+        model_config.model.name.clone()
+    } else {
+        "deepseek-v4-flash".to_string()
+    };
+    Ok(serde_json::json!({
+        "llm_provider": provider,
+        "llm_model": model,
+        "llm_api_key": api_key,
+        "llm_base_url": base_url,
+    }))
 }
 
 #[tauri::command]

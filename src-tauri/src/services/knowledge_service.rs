@@ -4,6 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// UUID v5 namespace for deterministic Wiki entity IDs.
 /// Uses a custom namespace so same-name entities share the same ID across documents.
 const WIKI_NAMESPACE: uuid::Uuid = uuid::Uuid::from_bytes([
@@ -2180,7 +2185,7 @@ impl KnowledgeService {
     /// Save chat conversation to a .md file in wiki/chat/.
     /// Pure file generation — no entity extraction (FileWatcher handles that).
     /// No heimdall_id or auto-generated markers (Nexus pipeline).
-    pub fn save_chat_to_knowledge(
+    pub async fn save_chat_to_knowledge(
         &self,
         text: &str,
         source_label: &str,
@@ -2220,11 +2225,29 @@ impl KnowledgeService {
             file_name
         );
 
-        Ok(ChatKnowledgeSaveResult {
-            file_name,
-            new_count: 0,
-            entities: Vec::new(),
-        })
+        // Synchronously extract entities after saving
+        let target_str = target.to_string_lossy().to_string();
+        match self.extract_entities(&target_str, "chat").await {
+            Ok(result) => {
+                log::info!(
+                    "save_chat_to_knowledge extraction: {} new entities",
+                    result.new_count
+                );
+                Ok(ChatKnowledgeSaveResult {
+                    file_name: file_name.clone(),
+                    new_count: result.new_count,
+                    entities: Vec::new(),
+                })
+            }
+            Err(e) => {
+                log::warn!("save_chat_to_knowledge extraction failed (non-fatal): {e}");
+                Ok(ChatKnowledgeSaveResult {
+                    file_name,
+                    new_count: 0,
+                    entities: Vec::new(),
+                })
+            }
+        }
     }
 
     // ── Nexus Knowledge Engine ──
@@ -2298,7 +2321,7 @@ impl KnowledgeService {
                 v.get("nexus")
                     .map(|n| serde_json::to_value(n).unwrap_or_default())
             })
-            .unwrap_or_else(|| serde_json::json!({"llm_mode": "follow_agent"}));
+            .unwrap_or_else(|| serde_json::json!({"llm_mode": "custom"}));
 
         let llm_mode = nexus.get("llm_mode").and_then(|v| v.as_str()).unwrap_or("follow_agent");
 
@@ -2450,6 +2473,7 @@ impl KnowledgeService {
             cmd.arg("--context").arg(ctx);
         }
 
+        #[cfg(windows)] { cmd.creation_flags(CREATE_NO_WINDOW); }
         let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start extract_service.py: {e}"))?;
 
@@ -5859,6 +5883,27 @@ impl KnowledgeService {
     }
 
     // ── Nexus P5: Entity/Relation CRUD + Feedback + Merge ──
+
+    /// Create a new entity in the knowledge base.
+    pub fn nexus_create_entity(
+        &self,
+        id: &str,
+        name: &str,
+        entity_type: &str,
+        description: &str,
+        aliases: &str,
+        properties: &str,
+        now: &str,
+    ) -> Result<(), String> {
+        let db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        db.execute(
+            "INSERT INTO cache_entities (id, name, entity_type, description, aliases, properties, confidence, llm_confidence, source_count, source_type, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0.5, 0.5, 1, 'agent', ?7, ?7)",
+            rusqlite::params![id, name, entity_type, description, aliases, properties, now],
+        )
+        .map_err(|e| format!("创建实体失败: {e}"))?;
+        Ok(())
+    }
 
     /// Update entity fields. Writes feedback record for audit trail.
     pub fn nexus_update_entity(

@@ -54,6 +54,7 @@ pub async fn add_agent(
         enabled: true,
         config: crate::services::agents::AgentConnectionConfig {
             base_url, api_key, models, vision_models, reasoning_models,
+            ..Default::default()
         },
         detected: None,
         detected_path: None,
@@ -108,8 +109,15 @@ pub async fn update_agent_config(
     models: Option<Vec<String>>,
     vision_models: Option<Vec<String>>,
     reasoning_models: Option<Vec<String>>,
+    #[allow(unused)] vision_base_url: Option<String>,
+    #[allow(unused)] vision_api_key: Option<String>,
+    #[allow(unused)] reasoning_base_url: Option<String>,
+    #[allow(unused)] reasoning_api_key: Option<String>,
 ) -> Result<(), String> {
-    state.registry.read().await.update_config(&id, base_url, api_key, models, vision_models, reasoning_models)
+    state.registry.read().await.update_config(
+        &id, base_url, api_key, models, vision_models, reasoning_models,
+        vision_base_url, reasoning_base_url, vision_api_key, reasoning_api_key,
+    )
 }
 
 // ── OpenClaw lifecycle commands ──

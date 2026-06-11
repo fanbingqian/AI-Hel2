@@ -5,9 +5,10 @@
   z-index: 30;
   width: 280px;
   max-height: calc(100vh - 160px);
-  background: rgba(44, 44, 44, 0.95);
-  border: 1px solid #3A3A3A;
+  background: rgba(18, 18, 24, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   animation: panelIn 0.15s ease-out;

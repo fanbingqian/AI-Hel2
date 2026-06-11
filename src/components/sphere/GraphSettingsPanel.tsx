@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useKnowledgeStore } from "../../stores/knowledgeStore";
-import type { GraphSettings2D, GraphSettings3D } from "../../types/knowledge";
-import { DEFAULT_GRAPH_SETTINGS_2D, DEFAULT_GRAPH_SETTINGS_3D } from "../../types/knowledge";
+import type { GraphSettings2D } from "../../types/knowledge";
+import { DEFAULT_GRAPH_SETTINGS_2D } from "../../types/knowledge";
 import styles from "./GraphSettingsPanel.module.css";
 
 // ── Helpers ──────────────────────────────────────────────
@@ -175,8 +175,8 @@ function Settings2D() {
           <ConfigToggle label="箭头" value={g.showArrows} onChange={(v) => update({ showArrows: v })} />
           <ConfigToggle label="属性圆环" value={g.showTypeRing} onChange={(v) => update({ showTypeRing: v })} />
           <ConfigSlider label="文本透明度" value={g.textOpacity} min={0.1} max={1} step={0.05} onChange={(v) => update({ textOpacity: v })} />
-          <ConfigSlider label="节点大小" value={g.nodeSize} min={1} max={5} step={0.1} onChange={(v) => update({ nodeSize: v })} />
-          <ConfigSlider label="连线粗细" value={g.linkThickness} min={1} max={5} step={0.1} onChange={(v) => update({ linkThickness: v })} />
+          <ConfigSlider label="节点大小" value={g.nodeSize} min={0.3} max={3} step={0.05} onChange={(v) => update({ nodeSize: v })} />
+          <ConfigSlider label="连线粗细" value={g.linkThickness} min={0.1} max={2.5} step={0.05} onChange={(v) => update({ linkThickness: v })} />
         </div>
       )}
 
@@ -184,106 +184,13 @@ function Settings2D() {
       <SectionHeader name="forces" label="力度" expanded={expanded.has("forces")} onToggle={() => toggleSection("forces")} />
       {expanded.has("forces") && (
         <div className={styles.section}>
-          <ConfigSlider label="向心力" value={g.centerForce} min={0} max={1} step={0.05} onChange={(v) => update({ centerForce: v })} />
-          <ConfigSlider label="排斥力" value={g.repelForce} min={0} max={20} step={0.5} onChange={(v) => update({ repelForce: v })} />
-          <ConfigSlider label="吸引力" value={g.attractForce} min={0} max={1} step={0.05} onChange={(v) => update({ attractForce: v })} />
-          <ConfigSlider label="连线长度" value={g.linkLength} min={30} max={500} step={10} onChange={(v) => update({ linkLength: v })} />
+          <ConfigSlider label="向心力" value={g.centerForce} min={0.05} max={3} step={0.05} onChange={(v) => update({ centerForce: v })} />
+          <ConfigSlider label="排斥力" value={g.repelForce} min={0.1} max={5} step={0.05} onChange={(v) => update({ repelForce: v })} />
+          <ConfigSlider label="吸引力" value={g.attractForce} min={0.05} max={3} step={0.05} onChange={(v) => update({ attractForce: v })} />
+          <ConfigSlider label="连线长度" value={g.linkLength} min={0.3} max={3} step={0.05} onChange={(v) => update({ linkLength: v })} />
           <ConfigSlider label="拖拽引力" value={g.dragForce} min={1} max={15} step={0.5} onChange={(v) => update({ dragForce: v })} />
         </div>
       )}
-
-      <button type="button" className={styles.resetBtn} onClick={reset}>恢复默认</button>
-    </>
-  );
-}
-
-// ── 3D Settings Panel (keep existing layout) ────────────
-
-function Settings3D() {
-  const g = useKnowledgeStore((s) => s.graphSettings3D);
-  const update = useKnowledgeStore((s) => s.updateGraphSettings3D);
-  const reset = useKnowledgeStore((s) => s.resetGraphSettings3D);
-  const showOrphans = useKnowledgeStore((s) => s.showOrphans);
-  const setShowOrphans = useKnowledgeStore((s) => s.setShowOrphans);
-  const showFiles = useKnowledgeStore((s) => s.showFiles);
-  const setShowFiles = useKnowledgeStore((s) => s.setShowFiles);
-  const showInferenceEdges = useKnowledgeStore((s) => s.showInferenceEdges);
-  const setShowInferenceEdges = useKnowledgeStore((s) => s.setShowInferenceEdges);
-
-  const mkSlider = (label: string, key: keyof GraphSettings3D, min: number, max: number, step: number) => (
-    <div className={styles.field}>
-      <label className={styles.fieldLabel}>{label}</label>
-      <input
-        type="range"
-        className={styles.slider}
-        min={min}
-        max={max}
-        step={step}
-        value={g[key] as number}
-        onChange={(e) => update({ [key]: parseFloat(e.target.value) } as Partial<GraphSettings3D>)}
-        aria-label={label}
-        title={label}
-      />
-      <span className={styles.value}>{g[key]}</span>
-    </div>
-  );
-
-  const mkToggle = (label: string, value: boolean, onChange: (v: boolean) => void) => (
-    <div className={styles.field}>
-      <label className={styles.fieldLabel}>{label}</label>
-      <button
-        type="button"
-        className={`${styles.toggle} ${value ? styles.toggleOn : styles.toggleOff}`}
-        onClick={() => onChange(!value)}
-        title={label}
-        aria-label={label}
-      >
-        <span className={styles.toggleKnob} />
-      </button>
-    </div>
-  );
-
-  return (
-    <>
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>物理参数</div>
-        {mkSlider("斥力强度", "repulsion", 100, 5000, 100)}
-        {mkSlider("引力强度", "attraction", 0.001, 0.05, 0.001)}
-        {mkSlider("连接距离", "linkDistance", 20, 200, 1)}
-        {mkSlider("中心引力", "centering", 0.001, 0.03, 0.001)}
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>显示设置</div>
-        {mkToggle("显示标签", g.showLabels, (v) => update({ showLabels: v }))}
-        {mkToggle("推理连线", showInferenceEdges, setShowInferenceEdges)}
-        <div className={styles.field}>
-          <label className={styles.fieldLabel}>显示孤岛实体</label>
-          <button
-            type="button"
-            className={`${styles.toggle} ${showOrphans ? styles.toggleOn : styles.toggleOff}`}
-            onClick={() => setShowOrphans(!showOrphans)}
-            title="显示孤岛实体"
-            aria-label="显示孤岛实体"
-          >
-            <span className={styles.toggleKnob} />
-          </button>
-        </div>
-        <div className={styles.field}>
-          <label className={styles.fieldLabel}>显示文件节点</label>
-          <button
-            type="button"
-            className={`${styles.toggle} ${showFiles ? styles.toggleOn : styles.toggleOff}`}
-            onClick={() => setShowFiles(!showFiles)}
-            title="显示文件节点"
-            aria-label="显示文件节点"
-          >
-            <span className={styles.toggleKnob} />
-          </button>
-        </div>
-        {mkSlider("节点大小", "nodeScale", 0.5, 2.0, 0.1)}
-        {mkSlider("连线透明度", "edgeOpacity", 0.1, 1.0, 0.05)}
-      </div>
 
       <button type="button" className={styles.resetBtn} onClick={reset}>恢复默认</button>
     </>
@@ -294,7 +201,6 @@ function Settings3D() {
 
 export function GraphSettingsPanel() {
   const panelRef = useRef<HTMLDivElement>(null);
-  const graphViewMode = useKnowledgeStore((s) => s.graphViewMode);
   const saveGraphSettings = useKnowledgeStore((s) => s.saveGraphSettings);
   const setSettingsOpen = useKnowledgeStore((s) => s.setSettingsOpen);
 
@@ -328,7 +234,7 @@ export function GraphSettingsPanel() {
         </button>
       </div>
 
-      {graphViewMode === "2d" ? <Settings2D /> : <Settings3D />}
+      <Settings2D />
     </div>
   );
 }

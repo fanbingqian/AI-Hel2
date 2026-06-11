@@ -147,34 +147,6 @@ export interface EntityUpdates {
   hidden?: boolean;
 }
 
-export interface GraphSettings3D {
-  repulsion: number;
-  attraction: number;
-  linkDistance: number;
-  centering: number;
-  showLabels: boolean;
-  showInferenceEdges: boolean;
-  nodeScale: number;
-  edgeOpacity: number;
-}
-
-/** @deprecated use GraphSettings3D */
-export type GraphSettings = GraphSettings3D;
-
-export const DEFAULT_GRAPH_SETTINGS_3D: GraphSettings3D = {
-  repulsion: 1200,
-  attraction: 0.005,
-  linkDistance: 80,
-  centering: 0.006,
-  showLabels: true,
-  showInferenceEdges: true,
-  nodeScale: 1.0,
-  edgeOpacity: 0.9,
-};
-
-/** @deprecated use DEFAULT_GRAPH_SETTINGS_3D */
-export const DEFAULT_GRAPH_SETTINGS = DEFAULT_GRAPH_SETTINGS_3D;
-
 export interface GraphSettings2D {
   // 筛选
   searchQuery: string;
@@ -209,13 +181,13 @@ export const DEFAULT_GRAPH_SETTINGS_2D: GraphSettings2D = {
   showArrows: false,
   showTypeRing: true,
   textOpacity: 0.85,
-  nodeSize: 1.5,
-  linkThickness: 1.5,
-  centerForce: 0.2,
-  repelForce: 10,
-  attractForce: 0.5,
-  linkLength: 160,
-  dragForce: 3,
+  nodeSize: 0.5,         // Multiplier applied to base radius (4+degree*0.5)
+  linkThickness: 1.25,   // Multiplier for stroke-width
+  centerForce: 1,        // Multiplier × baseCenter(0.006) = center strength
+  repelForce: 3,         // Multiplier × baseRepel(3000)/nodeCount = repulsion
+  attractForce: 3,       // Multiplier × baseSpring(0.008) = link strength
+  linkLength: 0.5,       // Multiplier × baseLinkLen(80) = target distance
+  dragForce: 8,          // Dragging force multiplier (sets spring boost while dragging)
 };
 
 export interface LintWarning {
