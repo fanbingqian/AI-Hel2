@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuthStore } from "../../stores/authStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerUser } from "../../services/api";
+import { PasswordInput } from "../shared/PasswordInput";
 import styles from "./AuthForms.module.css";
 
 interface Props {
@@ -78,24 +79,22 @@ export function RegisterForm({ onSwitchToLogin }: Props) {
           </div>
           <div className={styles.field}>
             <label htmlFor="reg-password">密码</label>
-            <input
+            <PasswordInput
               id="reg-password"
               name="password"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               placeholder="至少6位密码"
               autoComplete="new-password"
             />
           </div>
           <div className={styles.field}>
             <label htmlFor="reg-confirm">确认密码</label>
-            <input
+            <PasswordInput
               id="reg-confirm"
               name="confirmPassword"
-              type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={setConfirmPassword}
               placeholder="再次输入密码"
               autoComplete="new-password"
             />

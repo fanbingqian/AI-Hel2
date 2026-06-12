@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAgentRegistry, type AgentInfo } from "../../hooks/useAgentRegistry";
+import { PasswordInput } from "../shared/PasswordInput";
 import styles from "./AgentSettings.module.css";
 
 const MODEL_SUGGESTIONS = [
@@ -251,7 +252,7 @@ function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, o
         </label>
         <label className={styles.configField}>
           <span>API Key</span>
-          <input type="password" value={apiKey} onChange={(e) => onApiKeyChange(e.target.value)} placeholder="sk-..." />
+          <PasswordInput value={apiKey} onChange={onApiKeyChange} placeholder="sk-..." />
         </label>
       </div>
       <div>
@@ -379,7 +380,7 @@ function AddAgentDialog({ onClose, onAdd }: {
         <label>Base URL: <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:8080/v1" /></label>
 
         <label>API Key:
-          <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-..." />
+          <PasswordInput value={key} onChange={setKey} placeholder="sk-..." />
           <span className={styles.dialogHint}>仅需填写 API Key 即可使用已选提供商</span>
         </label>
 

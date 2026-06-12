@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAuthStore } from "../../stores/authStore";
 import { AgentSettings } from "./AgentSettings";
+import { PasswordInput } from "../shared/PasswordInput";
 import { invoke } from "@tauri-apps/api/core";
 import {
   changePassword,
@@ -21,6 +22,14 @@ import {
   gatewaySaveCredentials,
   gatewaySavePlatformConfig,
   gatewayRemovePlatform,
+  listCronJobs,
+  addCronJob,
+  updateCronJob,
+  deleteCronJob,
+  toggleCronJob,
+  triggerCronJob,
+  getCronOutput,
+  type CronJob,
   type PlatformConfigStatus,
   type QrSessionInfo,
 } from "../../services/api";
@@ -210,14 +219,15 @@ function AccountSection() {
                   onClick={() => setShowOldPw(!showOldPw)}
                   style={{
                     background: "transparent",
-                    border: "1px solid #3A3A3A",
+                    border: "1px solid #555",
                     borderRadius: 4,
-                    color: "#808080",
+                    color: "#b3b3b3",
                     cursor: "pointer",
                     padding: "4px 7px",
-                    fontSize: 10,
+                    fontSize: 11,
                     flexShrink: 0,
                     fontFamily: "inherit",
+                    lineHeight: 1.2,
                   }}
                   title={showOldPw ? "隐藏密码" : "显示密码"}
                 >
@@ -239,14 +249,15 @@ function AccountSection() {
                   onClick={() => setShowNewPw(!showNewPw)}
                   style={{
                     background: "transparent",
-                    border: "1px solid #3A3A3A",
+                    border: "1px solid #555",
                     borderRadius: 4,
-                    color: "#808080",
+                    color: "#b3b3b3",
                     cursor: "pointer",
                     padding: "4px 7px",
-                    fontSize: 10,
+                    fontSize: 11,
                     flexShrink: 0,
                     fontFamily: "inherit",
+                    lineHeight: 1.2,
                   }}
                   title={showNewPw ? "隐藏密码" : "显示密码"}
                 >
@@ -958,23 +969,23 @@ function NexusSection() {
       {/* ── Server Health Indicator ── */}
       <div style={{
         display: "flex", alignItems: "center", gap: 10, marginBottom: 14,
-        padding: "8px 12px", borderRadius: 8,
-        background: serverHealth ? "#e8f5e9" : "#fdecea",
-        border: `1px solid ${serverHealth ? "#81c784" : "#ef9a9a"}`,
+        padding: "10px 12px", borderRadius: 6,
+        background: "#2C2C2C",
+        border: "1px solid #333333",
       }}>
         <span style={{
-          width: 12, height: 12, borderRadius: "50%",
+          width: 10, height: 10, borderRadius: "50%",
           background: serverHealth ? "#4caf50" : "#f44336",
           display: "inline-block",
           boxShadow: `0 0 6px ${serverHealth ? "#4caf50" : "#f44336"}`,
         }} />
-        <span style={{ fontSize: 13, fontWeight: 500, color: serverHealth ? "#2e7d32" : "#c62828" }}>
+        <span style={{ fontSize: 13, color: "#e6e6e6" }}>
           {checkingHealth ? "检测中..." : serverHealth ? `服务运行中 · 端口 ${serverHealth.port}` : "服务未启动"}
         </span>
         <button
           type="button"
           onClick={refreshServerHealth}
-          style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 11, cursor: "pointer", borderRadius: 4, border: "1px solid #ccc", background: "#fff" }}
+          style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11, cursor: "pointer", borderRadius: 4, border: "1px solid #555", background: "transparent", color: "#aaa" }}
         >
           重新检测
         </button>
@@ -1372,41 +1383,243 @@ function CompactReport({ result }: { result: any }) {
 }
 
 function TasksSection() {
+  const [jobs, setJobs] = useState<CronJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showOutput, setShowOutput] = useState<string | null>(null);
+  const [outputLines, setOutputLines] = useState<string[]>([]);
+
+  const load = useCallback(async () => {
+    try { setJobs(await listCronJobs()); } catch { /* */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const doAction = async (fn: () => Promise<unknown>, msg: string) => {
+    try { await fn(); setActionMsg(msg); load(); }
+    catch (e: any) { setActionMsg(`错误: ${typeof e === "string" ? e : e?.message}`); }
+    setTimeout(() => setActionMsg(null), 3000);
+  };
+
+  const handleShowOutput = async (jobId: string) => {
+    if (showOutput === jobId) { setShowOutput(null); return; }
+    try {
+      const lines = await getCronOutput(jobId);
+      setOutputLines(lines);
+      setShowOutput(jobId);
+    } catch { setOutputLines(["读取日志失败"]); setShowOutput(jobId); }
+  };
+
+  if (loading) return <div className={styles.section}><div className={styles.desc}>加载中...</div></div>;
+
   return (
     <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>定时任务</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h2 className={styles.sectionTitle}>定时任务</h2>
+        <button className={styles.btnSmPrimary} onClick={() => setShowAdd(true)}>+ 新建任务</button>
+      </div>
       <div className={styles.desc} style={{ marginBottom: 16 }}>
-        配置自动执行的后台任务。
+        Agent 网关内置的 cron 调度引擎每 60 秒检查一次，自动执行到期的 LLM 任务。
       </div>
 
-      <div className={styles.card} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 13, color: "#e6e6e6", fontWeight: 500 }}>每日知识库重建索引</span>
-            <span className={styles.badgeGreen}>运行中</span>
-          </div>
-          <div className={styles.desc}>频率: 每天 03:00 | 操作: reindex | Cron: 0 3 * * *</div>
-          <div className={styles.desc}>上次: 2026-05-26 03:00 (成功) | 下次: 2026-05-27 03:00</div>
+      {actionMsg && (
+        <div style={{ padding: "6px 12px", marginBottom: 10, borderRadius: 6, fontSize: 12,
+          background: actionMsg.startsWith("错误") ? "rgba(250,81,81,0.1)" : "rgba(7,193,96,0.1)",
+          border: `1px solid ${actionMsg.startsWith("错误") ? "rgba(250,81,81,0.25)" : "rgba(7,193,96,0.25)"}`,
+          color: actionMsg.startsWith("错误") ? "#fa5151" : "#07c160", }}>
+          {actionMsg}
         </div>
-        <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
-          <button className={styles.btnSmPrimary}>立即触发</button>
-          <button className={styles.btnSmYellow}>暂停</button>
-          <button className={styles.btnSmDanger}>删除</button>
+      )}
+
+      {/* ── System tasks ── */}
+      <div className={styles.label} style={{ marginBottom: 8 }}>系统后台任务</div>
+      <div className={styles.card} style={{ marginBottom: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <span style={{ fontSize: 13, color: "#e6e6e6", fontWeight: 500 }}>Agent 健康监控</span>
+          <div className={styles.desc}>每 30 秒检测网关 /health，异常时自动重启（最多 5 次）</div>
         </div>
+        <span className={styles.badgeGreen}>自动运行</span>
+      </div>
+      <div className={styles.card} style={{ marginBottom: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <span style={{ fontSize: 13, color: "#e6e6e6", fontWeight: 500 }}>Wiki 文件监听</span>
+          <div className={styles.desc}>监听文档目录变化，自动提取实体 + 清理失效引用</div>
+        </div>
+        <span className={styles.badgeGreen}>自动运行</span>
       </div>
 
-      <div className={styles.card} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", opacity: 0.5 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 13, color: "#808080", fontWeight: 500 }}>每小时同步知识库</span>
-            <span className={styles.badgeGray}>已暂停</span>
+      {/* ── Cron jobs ── */}
+      <div className={styles.label} style={{ marginBottom: 8, marginTop: 18 }}>
+        LLM 定时任务 ({jobs.length})
+      </div>
+      {jobs.length === 0 ? (
+        <div className={styles.desc} style={{ marginBottom: 12 }}>暂无任务。点击"新建任务"创建一个基于 LLM 的定时任务。</div>
+      ) : (
+        jobs.map((job) => (
+          <div key={job.id} className={styles.card} style={{
+            marginBottom: 8, padding: "10px 14px",
+            display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+            opacity: job.enabled ? 1 : 0.5,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 13, color: job.enabled ? "#e6e6e6" : "#808080", fontWeight: 500 }}>
+                  {job.name || "未命名"}
+                </span>
+                <span className={job.enabled ? styles.badgeGreen : styles.badgeGray}>
+                  {job.enabled ? "运行中" : "已暂停"}
+                </span>
+              </div>
+              <div className={styles.desc}>
+                频率: {job.schedule_display || "—"}
+                {job.deliver && job.deliver !== "local" ? ` | 投递: ${job.deliver}` : ""}
+                {(job.skills && job.skills.length > 0) ? ` | Skills: ${job.skills.join(", ")}` : ""}
+              </div>
+              <div className={styles.desc}>
+                上次: {job.last_run_at ? `${job.last_run_at.slice(0, 16)} (${job.last_status || "?"})` : "从未"}
+                {job.last_error ? ` — ${job.last_error.slice(0, 80)}` : ""}
+                {job.next_run_at ? ` | 下次: ${job.next_run_at.slice(0, 16)}` : ""}
+              </div>
+              {/* Output panel */}
+              {showOutput === job.id && (
+                <div style={{ marginTop: 8, padding: "8px 10px", background: "#1A1A1A", borderRadius: 4, fontSize: 11, color: "#b3b3b3", maxHeight: 160, overflow: "auto" }}>
+                  {outputLines.length === 0 ? <span>无输出记录</span> : outputLines.map((l, i) => <pre key={i} style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{l}</pre>)}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0, marginLeft: 8 }}>
+              <button className={styles.btnSmMuted} style={{ fontSize: 11 }} onClick={() => handleShowOutput(job.id)}>
+                {showOutput === job.id ? "收起" : "日志"}
+              </button>
+              <button className={styles.btnSmPrimary} style={{ fontSize: 11 }}
+                onClick={() => doAction(() => triggerCronJob(job.id), `已触发「${job.name}」`)}>
+                触发
+              </button>
+              <button className={job.enabled ? styles.btnSmYellow : styles.btnSmPrimary} style={{ fontSize: 11 }}
+                onClick={() => doAction(() => toggleCronJob(job.id, !job.enabled), `已${job.enabled ? "暂停" : "恢复"}「${job.name}」`)}>
+                {job.enabled ? "暂停" : "恢复"}
+              </button>
+              <button className={styles.btnSmDanger} style={{ fontSize: 11 }}
+                onClick={() => { if (confirm(`删除任务「${job.name}」？`)) doAction(() => deleteCronJob(job.id), `已删除「${job.name}」`); }}>
+                删除
+              </button>
+            </div>
           </div>
-          <div className={styles.desc}>频率: 每小时 | 操作: sync | Cron: 0 * * * *</div>
-          <div className={styles.desc}>上次: 2026-05-20 15:00 (失败: 网络超时)</div>
+        ))
+      )}
+
+      {/* Add job dialog */}
+      {showAdd && <AddCronDialog onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); load(); }} />}
+    </div>
+  );
+}
+
+function AddCronDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [schedule, setSchedule] = useState("0 9 * * *");
+  const [prompt, setPrompt] = useState("");
+  const [deliver, setDeliver] = useState("local");
+  const [skills, setSkills] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const handleAdd = async () => {
+    if (!name.trim()) { setErr("请输入任务名称"); return; }
+    if (!schedule.trim()) { setErr("请输入调度表达式"); return; }
+    setSaving(true); setErr("");
+    try {
+      await addCronJob({
+        name: name.trim(),
+        schedule: schedule.trim(),
+        prompt: prompt.trim() || null,
+        deliver: deliver || "local",
+        skills: skills ? skills.split(",").map((s) => s.trim()).filter(Boolean) : [],
+      });
+      onAdded();
+    } catch (e: any) {
+      setErr(typeof e === "string" ? e : e?.message || "创建失败");
+    } finally { setSaving(false); }
+  };
+
+  const presets = [
+    { label: "每天 09:00", expr: "0 9 * * *" },
+    { label: "每天 18:00", expr: "0 18 * * *" },
+    { label: "每小时", expr: "0 * * * *" },
+    { label: "每 30 分钟", expr: "*/30 * * * *" },
+    { label: "每周一 08:00", expr: "0 8 * * 1" },
+  ];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={onClose}>
+      <div style={{ background: "#1e1e1e", border: "1px solid #444", borderRadius: 12, padding: 24, width: 480, maxHeight: "90vh", overflow: "auto" }}
+        onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16 }}>新建 LLM 定时任务</h3>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>任务名称</label>
+          <input className={styles.textInput} value={name} onChange={(e) => setName(e.target.value)} placeholder="如：每日早报摘要" />
         </div>
-        <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
-          <button className={styles.btnSmPrimary}>恢复</button>
-          <button className={styles.btnSmDanger}>删除</button>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>调度表达式</label>
+          <input className={styles.textInput} value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="0 9 * * *" />
+          <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+            {presets.map((p) => (
+              <button key={p.expr} type="button" onClick={() => setSchedule(p.expr)}
+                style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, border: "1px solid #444", background: schedule === p.expr ? "#3b5fd9" : "transparent", color: schedule === p.expr ? "#fff" : "#888", cursor: "pointer" }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>LLM 提示词</label>
+          <textarea className={styles.textInput} value={prompt} onChange={(e) => setPrompt(e.target.value)}
+            placeholder="输入给 Agent 的指令，如：检查知识库质量并生成报告"
+            rows={1}
+            style={{
+              resize: "none", overflowY: "auto", minHeight: 36,
+              maxHeight: 110, lineHeight: 1.5,
+            }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 110) + "px";
+            }} />
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>投递目标（可选）</label>
+          <select className={styles.textInput} value={deliver} onChange={(e) => setDeliver(e.target.value)}>
+            <option value="local">本地（仅保存日志）</option>
+            <option value="weixin">微信</option>
+            <option value="wecom">企业微信</option>
+            <option value="feishu">飞书</option>
+            <option value="dingtalk">钉钉</option>
+            <option value="telegram">Telegram</option>
+            <option value="discord">Discord</option>
+            <option value="slack">Slack</option>
+            <option value="whatsapp">WhatsApp</option>
+          </select>
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>Skills（逗号分隔，可选）</label>
+          <input className={styles.textInput} value={skills} onChange={(e) => setSkills(e.target.value)}
+            placeholder="如：web-search, memory, file" />
+        </div>
+
+        {err && <div style={{ color: "#fa5151", fontSize: 12, marginTop: 8 }}>{err}</div>}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <button className={styles.btnSmMuted} onClick={onClose}>取消</button>
+          <button className={styles.btnSmPrimary} onClick={handleAdd} disabled={saving}>
+            {saving ? "创建中..." : "创建任务"}
+          </button>
         </div>
       </div>
     </div>
@@ -1518,10 +1731,12 @@ function NexusProviderRow({ nexusConfig, onFieldChange, onVerify }: {
       </div>
       <div className={styles.fieldGroup}>
         <label className={styles.label}>API Key</label>
-        <input className={styles.textInput} type="password"
+        <PasswordInput
+          className={styles.textInput}
           value={nexusConfig.llm_api_key || ""}
-          onChange={(e) => { onFieldChange("llm_api_key", e.target.value); }}
-          placeholder="sk-..." />
+          onChange={(v) => { onFieldChange("llm_api_key", v); }}
+          placeholder="sk-..."
+        />
       </div>
       <div className={styles.fieldGroup}>
         <label className={styles.label}>Model</label>

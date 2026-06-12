@@ -90,14 +90,12 @@ export function ChatPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, [messages, isLoading]);
 
-  // Auto-grow textarea
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (ta) {
-      ta.style.height = "auto";
-      ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
-    }
-  }, [input]);
+  // Auto-grow textarea on input (cap at 5 lines ≈ 110px, scroll beyond)
+  const handleTextareaInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 110) + "px";
+  }, []);
 
   // Ctrl+Space toggles input mode
   useEffect(() => {
@@ -220,8 +218,9 @@ export function ChatPanel() {
             placeholder="输入消息... (Enter 发送, 右Alt 按住说话)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onInput={handleTextareaInput}
             rows={1}
+            onKeyDown={handleKeyDown}
             aria-label="输入消息"
           />
         )}

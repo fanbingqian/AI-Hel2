@@ -95,7 +95,6 @@
 }
 
 .textInput {
-  flex: 1;
   padding: 6px 0;
   background: transparent;
   border: none;
@@ -104,9 +103,11 @@
   line-height: 1.5;
   outline: none;
   min-width: 0;
+  min-height: 32px;     /* 1 row minimum */
   font-family: inherit;
   resize: none;
-  max-height: 160px;
+  overflow-y: auto;
+  max-height: 110px;    /* 5 lines at 13px × 1.5 */
 }
 
 .textInput::placeholder {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuthStore } from "../../stores/authStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { loginUser } from "../../services/api";
+import { PasswordInput } from "../shared/PasswordInput";
 import styles from "./AuthForms.module.css";
 
 interface Props {
@@ -55,12 +56,11 @@ export function LoginForm({ onSwitchToRegister }: Props) {
           </div>
           <div className={styles.field}>
             <label htmlFor="login-password">密码</label>
-            <input
+            <PasswordInput
               id="login-password"
               name="password"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               placeholder="输入密码"
             />
           </div>

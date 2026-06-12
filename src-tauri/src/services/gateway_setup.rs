@@ -217,18 +217,18 @@ impl GatewaySetupService {
             })
             .collect();
 
-        // Add non-QR platforms found in config.yaml
-        let qr_keys: std::collections::HashSet<String> =
+        // Collect keys already present (QR platforms + any from config.yaml)
+        let mut seen_keys: std::collections::HashSet<String> =
             result.iter().map(|p| p.key.clone()).collect();
 
+        // Add non-QR platforms from config.yaml (already configured, but not in QR list)
         if let Some(cfg) = platforms_obj {
             for (key, _val) in cfg {
-                if !qr_keys.contains(key) {
+                if !seen_keys.contains(key) {
                     let enabled = _val
                         .get("enabled")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    // Map known platform keys to human labels
                     let label = Self::platform_label(key);
                     result.push(PlatformConfigStatus {
                         key: key.clone(),
@@ -237,7 +237,23 @@ impl GatewaySetupService {
                         configured: true,
                         has_qr: false,
                     });
+                    seen_keys.insert(key.clone());
                 }
+            }
+        }
+
+        // Add all known non-QR platforms that aren't already in the list,
+        // so users can discover them even before configuring.
+        for (key, label) in Self::ALL_NON_QR_PLATFORMS {
+            if !seen_keys.contains(*key) {
+                result.push(PlatformConfigStatus {
+                    key: key.to_string(),
+                    label: label.to_string(),
+                    enabled: false,
+                    configured: false,
+                    has_qr: false,
+                });
+                seen_keys.insert(key.to_string());
             }
         }
 
@@ -250,37 +266,44 @@ impl GatewaySetupService {
         Ok(result)
     }
 
+    /// All non-QR platforms that have adapter code in hermes-agent.
+    /// These are shown in the UI even when not yet configured in config.yaml,
+    /// so users can discover them.
+    const ALL_NON_QR_PLATFORMS: &[(&str, &str)] = &[
+        ("telegram", "Telegram"),
+        ("discord", "Discord"),
+        ("whatsapp", "WhatsApp"),
+        ("signal", "Signal"),
+        ("slack", "Slack"),
+        ("matrix", "Matrix"),
+        ("mattermost", "Mattermost"),
+        ("bluebubbles", "iMessage (BlueBubbles)"),
+        ("email", "Email"),
+        ("sms", "SMS"),
+        ("homeassistant", "Home Assistant"),
+        ("webhook", "Webhook"),
+        ("msgraph_webhook", "Microsoft Graph"),
+        ("api_server", "API Server"),
+        ("yuanbao", "元宝"),
+        ("google_chat", "Google Chat"),
+        ("irc", "IRC"),
+        ("line", "LINE"),
+        ("simplex", "SimpleX Chat"),
+        ("teams", "Microsoft Teams"),
+    ];
+
     fn platform_label(key: &str) -> String {
+        // Check the known list first
+        for (k, label) in Self::ALL_NON_QR_PLATFORMS {
+            if *k == key { return label.to_string(); }
+        }
         match key {
-            "telegram" => "Telegram".into(),
-            "discord" => "Discord".into(),
             "weixin" => "微信".into(),
             "wecom" => "企业微信".into(),
             "feishu" => "飞书".into(),
             "qqbot" => "QQ 机器人".into(),
             "dingtalk" => "钉钉".into(),
-            "slack" => "Slack".into(),
-            "whatsapp" => "WhatsApp".into(),
-            "signal" => "Signal".into(),
-            "matrix" => "Matrix".into(),
-            "mattermost" => "Mattermost".into(),
-            "email" => "Email".into(),
-            "sms" => "SMS".into(),
-            "imessage" => "iMessage".into(),
-            "webhooks" => "Webhooks".into(),
-            "api_server" => "API Server".into(),
-            "irc" => "IRC".into(),
-            "line" => "LINE".into(),
-            "teams" => "Microsoft Teams".into(),
-            "zalo" => "Zalo".into(),
-            "wechat" => "微信 (旧)".into(),
-            "kook" => "KOOK".into(),
-            "telegram_business" => "Telegram Business".into(),
-            "douyin" => "抖音".into(),
-            "yuanbao" => "元宝".into(),
-            "qqbot" => "QQ 机器人 (需手动配置)".into(),
             other => {
-                // Humanize the key: replace underscores, capitalize
                 let mut s = other.replace('_', " ");
                 if let Some(r) = s.get_mut(0..1) {
                     r.make_ascii_uppercase();
@@ -601,5 +624,145 @@ impl GatewaySetupService {
         self.save_platform_config(platform_key, &config)?;
 
         Ok(())
+    }
+
+    // ── Cron job management ─────────────────────────────────────────────
+
+    fn cron_dir(&self) -> PathBuf {
+        self.hermes_home.join("cron")
+    }
+
+    fn cron_jobs_path(&self) -> PathBuf {
+        self.cron_dir().join("jobs.json")
+    }
+
+    fn cron_output_dir(&self) -> PathBuf {
+        self.cron_dir().join("output")
+    }
+
+    /// Read all cron jobs from jobs.json.
+    fn read_cron_jobs(&self) -> Result<Vec<serde_json::Value>, String> {
+        let path = self.cron_jobs_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Read jobs.json error: {e}"))?;
+        let jobs: Vec<serde_json::Value> = serde_json::from_str(&content)
+            .map_err(|e| format!("Parse jobs.json error: {e}"))?;
+        Ok(jobs)
+    }
+
+    /// Write all cron jobs to jobs.json (atomic via temp file).
+    fn write_cron_jobs(&self, jobs: &[serde_json::Value]) -> Result<(), String> {
+        let path = self.cron_jobs_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
+        }
+        let content = serde_json::to_string_pretty(jobs)
+            .map_err(|e| format!("Serialize error: {e}"))?;
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, &content).map_err(|e| format!("Write tmp error: {e}"))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("Rename error: {e}"))
+    }
+
+    /// List all cron jobs.
+    pub fn list_cron_jobs(&self) -> Result<Vec<serde_json::Value>, String> {
+        self.read_cron_jobs()
+    }
+
+    /// Add a new cron job.
+    pub fn add_cron_job(&self, job: serde_json::Value) -> Result<serde_json::Value, String> {
+        let mut jobs = self.read_cron_jobs()?;
+        let mut new_job = job.clone();
+        // Generate ID + timestamps if not provided
+        if new_job.get("id").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty()) {
+            let id = uuid::Uuid::new_v4().to_string()[..12].to_string();
+            new_job["id"] = serde_json::Value::String(id);
+        }
+        if new_job.get("created_at").is_none() {
+            new_job["created_at"] = serde_json::Value::String(
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
+            );
+        }
+        if new_job.get("enabled").is_none() {
+            new_job["enabled"] = serde_json::Value::Bool(true);
+        }
+        if new_job.get("state").is_none() {
+            new_job["state"] = serde_json::Value::String("scheduled".into());
+        }
+        jobs.push(new_job.clone());
+        self.write_cron_jobs(&jobs)?;
+        Ok(new_job)
+    }
+
+    /// Update an existing cron job.
+    pub fn update_cron_job(&self, job_id: &str, updates: serde_json::Value) -> Result<(), String> {
+        let mut jobs = self.read_cron_jobs()?;
+        let job = jobs.iter_mut().find(|j| {
+            j.get("id").and_then(|v| v.as_str()) == Some(job_id)
+        }).ok_or_else(|| format!("Job {} not found", job_id))?;
+        if let Some(obj) = updates.as_object() {
+            for (k, v) in obj {
+                job[k] = v.clone();
+            }
+        }
+        self.write_cron_jobs(&jobs)
+    }
+
+    /// Delete a cron job.
+    pub fn delete_cron_job(&self, job_id: &str) -> Result<(), String> {
+        let mut jobs = self.read_cron_jobs()?;
+        let before = jobs.len();
+        jobs.retain(|j| j.get("id").and_then(|v| v.as_str()) != Some(job_id));
+        if jobs.len() == before {
+            return Err(format!("Job {} not found", job_id));
+        }
+        self.write_cron_jobs(&jobs)
+    }
+
+    /// Toggle cron job enabled state.
+    pub fn toggle_cron_job(&self, job_id: &str, enabled: bool) -> Result<(), String> {
+        let state = if enabled { "scheduled" } else { "paused" };
+        self.update_cron_job(job_id, serde_json::json!({
+            "enabled": enabled,
+            "state": state,
+        }))
+    }
+
+    /// Trigger a cron job immediately by setting next_run_at to now.
+    pub fn trigger_cron_job(&self, job_id: &str) -> Result<(), String> {
+        let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        self.update_cron_job(job_id, serde_json::json!({
+            "next_run_at": now,
+            "state": "scheduled",
+        }))
+    }
+
+    /// Get recent output for a cron job.
+    pub fn get_cron_output(&self, job_id: &str) -> Result<Vec<String>, String> {
+        let output_dir = self.cron_output_dir().join(job_id);
+        if !output_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut entries: Vec<String> = Vec::new();
+        if let Ok(iter) = std::fs::read_dir(&output_dir) {
+            for entry in iter.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".md") || name.ends_with(".txt") {
+                    if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                        // Truncate to first 500 chars for preview
+                        let preview = if content.len() > 500 {
+                            format!("{}...", &content[..500])
+                        } else {
+                            content
+                        };
+                        entries.push(format!("{}:\n{}", name, preview));
+                    }
+                }
+            }
+        }
+        entries.sort_by(|a, b| b.cmp(a)); // newest first
+        Ok(entries.into_iter().take(5).collect())
     }
 }

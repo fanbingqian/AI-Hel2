@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAuthStore } from "../../stores/authStore";
 import { updateApiKey, saveConfig } from "../../services/api";
+import { PasswordInput } from "../shared/PasswordInput";
 import styles from "./AuthForms.module.css";
 
 interface ProviderDef {
@@ -252,16 +253,15 @@ export function ApiSetupWizard() {
                     <span className={styles.provDot} style={{ background: prov.color }} />
                     <span className={styles.provName}>{prov.name}</span>
                     <span className={styles.provModel}>{prov.defaultModel}</span>
-                    <input
+                    <PasswordInput
                       id={`key-input-${prov.id}`}
                       name={`api-key-${prov.id}`}
                       className={styles.keyInput}
-                      type="password"
                       placeholder="粘贴 API Key..."
                       value={keys[prov.id] || ""}
-                      onChange={(e) => handleKeyChange(prov.id, e.target.value)}
+                      onChange={(v) => handleKeyChange(prov.id, v)}
                       onFocus={() => setActiveProvider(prov.id)}
-                      aria-label={`${prov.name} API Key`}
+                      ariaLabel={`${prov.name} API Key`}
                     />
                     <span className={`${styles.provStatus} ${hasKey ? styles.done : ""}`}>
                       {hasKey ? "已配置" : "未配置"}

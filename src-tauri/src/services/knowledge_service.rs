@@ -255,6 +255,7 @@ impl KnowledgeService {
             ("002_nexus_schema", include_str!("../../migrations/002_nexus_schema.sql")),
             ("003_feedback_reason", include_str!("../../migrations/003_feedback_reason.sql")),
             ("004_relations_columns", include_str!("../../migrations/004_relations_columns.sql")),
+            ("005_inferred_edges", include_str!("../../migrations/005_inferred_edges.sql")),
         ];
 
         for (i, (_name, sql)) in migrations.iter().enumerate() {
@@ -7321,49 +7322,98 @@ impl KnowledgeService {
         let db = self.cache_db.lock().map_err(|e| e.to_string())?;
         let now = chrono::Utc::now().to_rfc3339();
 
-        let transitive_types = ["is_a", "part_of", "located_in", "belongs_to"];
+        // ── Discover all transitive relation types in the graph ──
+        // Instead of hardcoding 4 types, scan what's actually used.
+        let mut type_stmt = db.prepare(
+            "SELECT DISTINCT relation_type FROM cache_relations"
+        ).map_err(|e| e.to_string())?;
+        let all_types: Vec<String> = type_stmt.query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Common transitive relation patterns — expand the hardcoded list
+        // with these prefixes.  e.g. is_a, subclass_of, part_of, located_in,
+        // belongs_to, contains, derived_from, depends_on, etc.
+        let transitive_prefixes = [
+            "is_a", "subclass", "part_of", "located", "belongs",
+            "contains", "derived", "depends", "requires", "implies",
+        ];
+        let transitive_types: Vec<String> = all_types.into_iter().filter(|t| {
+            transitive_prefixes.iter().any(|p| t.starts_with(p))
+        }).collect();
+        // Fallback to known types if the graph is empty or has no matches
+        let transitive_types = if transitive_types.is_empty() {
+            vec!["is_a".into(), "part_of".into(), "located_in".into(), "belongs_to".into()]
+        } else {
+            transitive_types
+        };
+
         let mut total_scanned = 0u32;
         let mut total_inferred = 0u32;
         let mut skipped = 0u32;
+        let mut iterations = 0u32;
+        const MAX_ITERATIONS: u32 = 10;
 
-        for ttype in &transitive_types {
-            // Find paths of length 2: A → B → C where both edges are same transitive type
-            let mut stmt = db.prepare(
-                "SELECT r1.from_id, r2.to_id, r1.relation_type, MIN(r1.weight, r2.weight)
-                 FROM cache_relations r1
-                 JOIN cache_relations r2 ON r1.to_id = r2.from_id AND r1.relation_type = r2.relation_type
-                 WHERE r1.relation_type = ?1
-                   AND r1.from_id != r2.to_id"
-            ).map_err(|e| e.to_string())?;
+        // ── Transaction wrapper ──
+        db.execute("BEGIN", []).map_err(|e| e.to_string())?;
 
-            let candidates: Vec<(String, String, String, f64)> = stmt.query_map(rusqlite::params![ttype], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, f64>(3)?))
-            }).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
+        // ── Iterative transitive closure until convergence ──
+        loop {
+            iterations += 1;
+            let mut round_inferred = 0u32;
 
-            total_scanned += candidates.len() as u32;
+            for ttype in &transitive_types {
+                // Find 2-hop paths: A → B → C where both edges share the same transitive type.
+                // Include newly-inferred edges from previous iterations so multi-hop chains
+                // (A → B → C → D) eventually close to A → D.
+                let mut stmt = db.prepare(
+                    "SELECT r1.from_id, r2.to_id, r1.relation_type, MIN(r1.weight, r2.weight)
+                     FROM cache_relations r1
+                     JOIN cache_relations r2 ON r1.to_id = r2.from_id AND r1.relation_type = r2.relation_type
+                     WHERE r1.relation_type = ?1
+                       AND r1.from_id != r2.to_id"
+                ).map_err(|e| e.to_string())?;
 
-            for (from_id, to_id, rel_type, weight) in &candidates {
-                // Check if direct edge already exists
-                let exists: bool = db.query_row(
-                    "SELECT COUNT(*) > 0 FROM cache_relations WHERE from_id = ?1 AND to_id = ?2 AND relation_type = ?3",
-                    rusqlite::params![from_id, to_id, rel_type],
-                    |r| r.get(0),
-                ).unwrap_or(false);
+                let candidates: Vec<(String, String, String, f64)> = stmt.query_map(
+                    rusqlite::params![ttype],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, f64>(3)?))
+                ).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
 
-                if exists {
-                    skipped += 1;
-                    continue;
+                total_scanned += candidates.len() as u32;
+
+                for (from_id, to_id, rel_type, weight) in &candidates {
+                    // Skip if any edge already exists (original or previously inferred)
+                    let exists: bool = db.query_row(
+                        "SELECT COUNT(*) > 0 FROM cache_relations WHERE from_id = ?1 AND to_id = ?2 AND relation_type = ?3",
+                        rusqlite::params![from_id, to_id, rel_type],
+                        |r| r.get(0),
+                    ).unwrap_or(false);
+
+                    if exists {
+                        skipped += 1;
+                        continue;
+                    }
+
+                    // Inferred edges get lower confidence — capped at 0.5
+                    let confidence = (weight * 0.9).min(0.5);
+                    let new_id = uuid::Uuid::new_v4().to_string();
+                    let _ = db.execute(
+                        "INSERT INTO cache_relations (id, from_id, to_id, relation_type, weight, bidirectional, inferred, source_type) VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 'inferred')",
+                        rusqlite::params![new_id, from_id, to_id, rel_type, confidence],
+                    );
+                    total_inferred += 1;
+                    round_inferred += 1;
                 }
+            }
 
-                let confidence = (weight * 0.9).min(0.5);
-                let new_id = uuid::Uuid::new_v4().to_string();
-                let _ = db.execute(
-                    "INSERT OR IGNORE INTO cache_relations (id, from_id, to_id, relation_type, weight, bidirectional) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
-                    rusqlite::params![new_id, from_id, to_id, rel_type, confidence],
-                );
-                total_inferred += 1;
+            if round_inferred == 0 || iterations >= MAX_ITERATIONS {
+                break;
             }
         }
+
+        // ── Commit ──
+        db.execute("COMMIT", []).map_err(|e| e.to_string())?;
 
         // Log to synthesis_log
         let task_id = uuid::Uuid::new_v4().to_string();
@@ -7383,36 +7433,50 @@ impl KnowledgeService {
 
         let conflict_pairs = [("supports", "opposes"), ("agrees", "disagrees"), ("proves", "disproves")];
         let mut conflicts: Vec<ConflictEntry> = Vec::new();
+        let mut total_pairs_scanned = 0u32;
 
         for (t1, t2) in &conflict_pairs {
+            // Count potential conflict pairs for this relation pair
+            let pair_count: u32 = db.query_row(
+                "SELECT COUNT(*) FROM cache_relations r1
+                 JOIN cache_relations r2 ON r1.from_id = r2.from_id AND r1.to_id = r2.to_id
+                 WHERE r1.relation_type = ?1 AND r2.relation_type = ?2 AND r1.id < r2.id",
+                rusqlite::params![t1, t2],
+                |r| r.get(0),
+            ).unwrap_or(0);
+            total_pairs_scanned += pair_count;
+
+            // Fetch up to 100 conflicts per pair for display
             let mut stmt = db.prepare(
-                "SELECT e1.name, e2.name, r1.relation_type, r2.relation_type, r1.to_id, e3.name
+                "SELECT e1.name, r1.relation_type, r2.relation_type, r1.to_id, e3.name
                  FROM cache_relations r1
                  JOIN cache_relations r2 ON r1.from_id = r2.from_id AND r1.to_id = r2.to_id
                  JOIN cache_entities e1 ON e1.id = r1.from_id
-                 JOIN cache_entities e2 ON e2.id = r1.from_id
                  JOIN cache_entities e3 ON e3.id = r1.to_id
                  WHERE r1.relation_type = ?1 AND r2.relation_type = ?2
                    AND r1.id < r2.id
-                 LIMIT 50"
+                 ORDER BY r1.from_id
+                 LIMIT 100"
             ).map_err(|e| e.to_string())?;
 
-            let rows: Vec<(String, String, String, String, String, String)> = stmt.query_map(
+            let rows: Vec<(String, String, String, String, String)> = stmt.query_map(
                 rusqlite::params![t1, t2],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             ).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
 
-            for (ea, _eb, ra, rb, target, tname) in &rows {
+            for (entity_name, ra, rb, target_id, target_name) in &rows {
                 conflicts.push(ConflictEntry {
-                    entity_a: ea.clone(), entity_b: ea.clone(),
-                    relation_a: ra.clone(), relation_b: rb.clone(),
-                    target: format!("{tname} ({target})"),
+                    entity_a: entity_name.clone(),
+                    entity_b: String::new(), // same entity holds both conflicting relations
+                    relation_a: ra.clone(),
+                    relation_b: rb.clone(),
+                    target: format!("{target_name} ({target_id})"),
                 });
             }
         }
 
         Ok(ConflictReport {
-            scanned_pairs: conflicts.len() as u32,
+            scanned_pairs: total_pairs_scanned,
             conflicts_found: conflicts.len() as u32,
             conflicts,
         })

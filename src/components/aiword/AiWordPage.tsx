@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { PasswordInput } from "../shared/PasswordInput";
 import styles from "./AiWordPage.module.css";
 
 const STORAGE_KEY = "aiword_connection";
@@ -83,11 +84,10 @@ export default function AiWordPage() {
           </div>
           <div className={styles.field}>
             <label className={styles.label}>访问 Token（选填）</label>
-            <input
+            <PasswordInput
               className={styles.input}
-              type="password"
               value={token}
-              onChange={(e) => { setToken(e.target.value); setError(null); }}
+              onChange={(v) => { setToken(v); setError(null); }}
               placeholder="STUDIO_ACCESS_TOKEN"
               onKeyDown={(e) => e.key === "Enter" && handleConnect()}
             />

@@ -59,13 +59,22 @@ export function ForceGraph2DWrapper() {
   const selectedId = useKnowledgeStore((s) => s.selectedEntityId);
   const selectEntity = useKnowledgeStore((s) => s.selectEntity);
   const graphSettings = useKnowledgeStore((s) => s.graphSettings2D);
+  const showOrphans = useKnowledgeStore((s) => s.showOrphans);
+  const showFiles = useKnowledgeStore((s) => s.showFiles);
   selectedIdRef.current = selectedId;
 
-  // Build graph data
+  // Build graph data — pass live settings so filter controls actually work
   const { nodes, links } = useMemo(() => {
     const gd = buildGraphData(entities, relations, inferences, {
-      focusedNodeId: null, focusDepth: 2, showOrphans: true, showFiles: true,
-      showInferenceEdges: true, nodeRelSize: 1, searchQuery: "", minImportance: 0, colorGroups: [],
+      focusedNodeId: null,
+      focusDepth: graphSettings.explorationDepth ?? 2,
+      showOrphans,
+      showFiles,
+      showInferenceEdges: true,
+      nodeRelSize: graphSettings.nodeSize ?? 1,
+      searchQuery: graphSettings.searchQuery || "",
+      minImportance: graphSettings.minImportance ?? 0,
+      colorGroups: graphSettings.colorGroups || [],
     });
     const ns = gd.nodes.map((n) => ({
       ...n,

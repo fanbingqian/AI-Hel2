@@ -207,6 +207,7 @@ async fn run_hermes_chat(
     let mut pending_event: Option<String> = None;
     let mut current_session_id: Option<String> = header_session_id;
     let mut received_content = false;
+    let mut done_emitted = false;
     let mut accumulated_content = String::new();
 
     while let Some(chunk_result) = byte_stream.next().await {
@@ -238,7 +239,9 @@ async fn run_hermes_chat(
                 continue;
             }
             if let Some(data) = trimmed.strip_prefix("data: ") {
-                if data != "[DONE]" {
+                if data == "[DONE]" {
+                    done_emitted = true;
+                } else {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
                         if let Some(err) = parsed.get("error") {
                             let err_msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("未知错误").to_string();
@@ -269,6 +272,19 @@ async fn run_hermes_chat(
                 });
             }
         }
+    } else if !done_emitted {
+        // Stream ended with content but no [DONE] marker — emit done so the
+        // frontend exits loading state.  If [DONE] was already processed we
+        // skip this to avoid a duplicate chat:done event.
+        let _ = app.emit(
+            "chat:done",
+            StreamDone {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                session_id: current_session_id.clone(),
+            },
+        );
     }
 
     // Notify pill: agent finished

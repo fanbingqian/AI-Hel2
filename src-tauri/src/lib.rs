@@ -651,6 +651,13 @@ pub fn run() {
             commands::gateway::gateway_save_credentials,
             commands::gateway::gateway_save_platform_config,
             commands::gateway::gateway_remove_platform,
+            commands::gateway::list_cron_jobs,
+            commands::gateway::add_cron_job,
+            commands::gateway::update_cron_job,
+            commands::gateway::delete_cron_job,
+            commands::gateway::toggle_cron_job,
+            commands::gateway::trigger_cron_job,
+            commands::gateway::get_cron_output,
             // Files
             commands::files::read_text_file,
             commands::files::read_file_base64,

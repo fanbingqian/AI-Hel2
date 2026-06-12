@@ -93,3 +93,62 @@ pub fn gateway_remove_platform(
 ) -> Result<(), String> {
     service.remove_platform_config(&platform)
 }
+
+// ── Cron job commands ──
+
+#[tauri::command]
+pub fn list_cron_jobs(
+    service: State<'_, GatewaySetupService>,
+) -> Result<Vec<serde_json::Value>, String> {
+    service.list_cron_jobs()
+}
+
+#[tauri::command]
+pub fn add_cron_job(
+    service: State<'_, GatewaySetupService>,
+    job: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    service.add_cron_job(job)
+}
+
+#[tauri::command]
+pub fn update_cron_job(
+    service: State<'_, GatewaySetupService>,
+    jobId: String,
+    updates: serde_json::Value,
+) -> Result<(), String> {
+    service.update_cron_job(&jobId, updates)
+}
+
+#[tauri::command]
+pub fn delete_cron_job(
+    service: State<'_, GatewaySetupService>,
+    jobId: String,
+) -> Result<(), String> {
+    service.delete_cron_job(&jobId)
+}
+
+#[tauri::command]
+pub fn toggle_cron_job(
+    service: State<'_, GatewaySetupService>,
+    jobId: String,
+    enabled: bool,
+) -> Result<(), String> {
+    service.toggle_cron_job(&jobId, enabled)
+}
+
+#[tauri::command]
+pub fn trigger_cron_job(
+    service: State<'_, GatewaySetupService>,
+    jobId: String,
+) -> Result<(), String> {
+    service.trigger_cron_job(&jobId)
+}
+
+#[tauri::command]
+pub fn get_cron_output(
+    service: State<'_, GatewaySetupService>,
+    jobId: String,
+) -> Result<Vec<String>, String> {
+    service.get_cron_output(&jobId)
+}

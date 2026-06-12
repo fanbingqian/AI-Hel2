@@ -99,9 +99,12 @@ impl AgentManager {
         let exe_dir = exe.parent()?;
 
         let mut candidates: Vec<PathBuf> = vec![
-            // production: hermes-agent/ next to the exe
+            // production: hermes-agent/ next to the exe (NSIS copy)
             exe_dir.to_path_buf(),
         ];
+
+        // hermes_home extraction (ZIP extracted here by extract_agent_zip)
+        candidates.push(self.hermes_home.clone());
 
         // Tauri resource directory (bundled resources extracted here)
         if let Some(rd) = self.resource_dir.lock().ok().and_then(|r| r.clone()) {
@@ -146,14 +149,43 @@ impl AgentManager {
         None
     }
 
-    /// Extract hermes-agent.zip from resource dir to data dir on first run.
+    /// Extract hermes-agent.zip to hermes_home/hermes-agent on first run or update.
+    /// Returns the parent directory containing the extracted hermes-agent.
     fn extract_agent_zip(&self, resource_dir: &std::path::Path) -> Option<PathBuf> {
         let zip_path = resource_dir.join("hermes-agent.zip");
         if !zip_path.exists() {
             return None;
         }
-        let target_dir = resource_dir.join("hermes-agent");
-        // Always re-extract: the ZIP might be newer (e.g., after update)
+        // Extract to hermes_home so the agent persists across app updates
+        // (the resource dir is wiped on each update, but hermes_home survives).
+        let target_dir = self.hermes_home.join("hermes-agent");
+
+        // Check if we need to re-extract: only if ZIP is newer or target missing
+        let should_extract = if !target_dir.exists() {
+            true
+        } else {
+            // Compare the ZIP modification time with a marker file we write after extraction
+            let marker = target_dir.join(".extract_done");
+            if !marker.exists() {
+                true
+            } else {
+                let zip_mtime = std::fs::metadata(&zip_path).ok()
+                    .and_then(|m| m.modified().ok());
+                let marker_mtime = std::fs::metadata(&marker).ok()
+                    .and_then(|m| m.modified().ok());
+                match (zip_mtime, marker_mtime) {
+                    (Some(z), Some(m)) => z > m,
+                    _ => true,
+                }
+            }
+        };
+
+        if !should_extract {
+            log::info!("[AgentManager] hermes-agent already up to date at {}", target_dir.display());
+            return Some(self.hermes_home.clone());
+        }
+
+        // Remove old extraction if present
         if target_dir.exists() {
             let _ = fs::remove_dir_all(&target_dir);
         }
@@ -172,8 +204,12 @@ impl AgentManager {
             log::error!("[AgentManager] Failed to extract: {}", e);
             return None;
         }
+
+        // Write marker file to track extraction time
+        let _ = fs::write(target_dir.join(".extract_done"), "ok");
+
         log::info!("[AgentManager] Extracted {} files to {}", archive.len(), target_dir.display());
-        Some(resource_dir.to_path_buf())
+        Some(self.hermes_home.clone())
     }
 
     /// Detect the Python executable path.

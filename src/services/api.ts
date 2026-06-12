@@ -585,3 +585,50 @@ export function gatewaySavePlatformConfig(platform: string, config: unknown): Pr
 export function gatewayRemovePlatform(platform: string): Promise<void> {
   return invoke("gateway_remove_platform", { platform });
 }
+
+// ── Cron ──
+
+export interface CronJob {
+  id: string;
+  name: string;
+  schedule: { kind: string; expr?: string; run_at?: string; minutes?: number; display: string };
+  schedule_display: string;
+  prompt?: string;
+  enabled: boolean;
+  state: string;
+  deliver?: string;
+  skills?: string[];
+  created_at: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+}
+
+export function listCronJobs(): Promise<CronJob[]> {
+  return invoke("list_cron_jobs");
+}
+
+export function addCronJob(job: Record<string, unknown>): Promise<CronJob> {
+  return invoke("add_cron_job", { job });
+}
+
+export function updateCronJob(jobId: string, updates: Record<string, unknown>): Promise<void> {
+  return invoke("update_cron_job", { jobId, updates });
+}
+
+export function deleteCronJob(jobId: string): Promise<void> {
+  return invoke("delete_cron_job", { jobId });
+}
+
+export function toggleCronJob(jobId: string, enabled: boolean): Promise<void> {
+  return invoke("toggle_cron_job", { jobId, enabled });
+}
+
+export function triggerCronJob(jobId: string): Promise<void> {
+  return invoke("trigger_cron_job", { jobId });
+}
+
+export function getCronOutput(jobId: string): Promise<string[]> {
+  return invoke("get_cron_output", { jobId });
+}

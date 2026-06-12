@@ -416,7 +416,7 @@ def _feishu_qr_poll(session_id: str) -> None:
 _QQBOT_HOST = "q.qq.com"
 _QQBOT_CREATE_PATH = "/lite/create_bind_task"
 _QQBOT_POLL_PATH = "/lite/poll_bind_result"
-_QQBOT_QR_TEMPLATE = "https://q.qq.com/lite/create_bot?task_id={task_id}"
+_QQBOT_QR_TEMPLATE = "https://q.qq.com/qqbot/openclaw/connect.html?task_id={task_id}&_wv=2&source=hermes"
 
 
 def _qqbot_generate_aes_key() -> str:
@@ -448,7 +448,11 @@ def _qqbot_qr_start() -> None:
         data = json.dumps({"key": aes_key}).encode("utf-8")
         req = urllib.request.Request(
             url, data=data,
-            headers={"Content-Type": "application/json", "Referer": f"https://{_QQBOT_HOST}/"}
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Referer": f"https://{_QQBOT_HOST}/",
+            }
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             resp_data = json.loads(resp.read().decode("utf-8"))
@@ -494,7 +498,11 @@ def _qqbot_qr_poll(session_id: str) -> None:
         data = json.dumps({"task_id": task_id}).encode("utf-8")
         req = urllib.request.Request(
             url, data=data,
-            headers={"Content-Type": "application/json", "Referer": f"https://{_QQBOT_HOST}/"}
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Referer": f"https://{_QQBOT_HOST}/",
+            }
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             resp_data = json.loads(resp.read().decode("utf-8"))
@@ -545,7 +553,11 @@ def _qqbot_qr_poll(session_id: str) -> None:
             req = urllib.request.Request(
                 f"https://{_QQBOT_HOST}{_QQBOT_CREATE_PATH}",
                 data=data,
-                headers={"Content-Type": "application/json", "Referer": f"https://{_QQBOT_HOST}/"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Referer": f"https://{_QQBOT_HOST}/",
+                }
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
@@ -720,16 +732,13 @@ def _list_platforms() -> None:
                 "description": "飞书 / Lark 自建应用",
                 "timeout_seconds": 600,
             },
-            # QQBot QR API endpoints changed upstream (2025).
-            # Old endpoints (/lite/create_bind_task, /lite/poll_bind_result)
-            # now return retcode=12. QQBot requires manual configuration
-            # via https://q.qq.com until the new API is documented.
-            # {
-            #     "key": "qqbot",
-            #     "label": "QQ 机器人",
-            #     "description": "QQ 开放平台机器人 (API 已变更，暂不支持扫码注册)",
-            #     "timeout_seconds": 600,
-            # },
+            {
+                "key": "qqbot",
+                "label": "QQ 机器人",
+                "emoji": "",
+                "description": "QQ 开放平台机器人 (扫码注册)",
+                "timeout_seconds": 600,
+            },
             {
                 "key": "dingtalk",
                 "label": "钉钉",
@@ -749,6 +758,7 @@ _PLATFORM_HANDLERS = {
     "weixin": (_weixin_qr_start, _weixin_qr_poll),
     "wecom": (_wecom_qr_start, _wecom_qr_poll),
     "feishu": (_feishu_qr_start, _feishu_qr_poll),
+    "qqbot": (_qqbot_qr_start, _qqbot_qr_poll),
     "dingtalk": (_dingtalk_qr_start, _dingtalk_qr_poll),
 }
 
