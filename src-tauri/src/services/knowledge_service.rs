@@ -256,6 +256,8 @@ impl KnowledgeService {
             ("003_feedback_reason", include_str!("../../migrations/003_feedback_reason.sql")),
             ("004_relations_columns", include_str!("../../migrations/004_relations_columns.sql")),
             ("005_inferred_edges", include_str!("../../migrations/005_inferred_edges.sql")),
+            ("006_community_id", include_str!("../../migrations/006_community_id.sql")),
+            ("007_merge_content_file", include_str!("../../migrations/007_merge_content_file.sql")),
         ];
 
         for (i, (_name, sql)) in migrations.iter().enumerate() {
@@ -912,7 +914,7 @@ impl KnowledgeService {
         let db = self.cache_db.lock().map_err(|e| e.to_string())?;
 
         let mut stmt = db
-            .prepare("SELECT id, name, entity_type, description, aliases, properties, confidence, source_file, created_at, updated_at, color, hidden FROM cache_entities WHERE hidden = 0 ORDER BY confidence DESC LIMIT 500")
+            .prepare("SELECT id, name, entity_type, description, aliases, properties, confidence, source_file, created_at, updated_at, color, hidden, community_id FROM cache_entities WHERE hidden = 0 ORDER BY confidence DESC LIMIT 500")
             .map_err(|e| e.to_string())?;
 
         let entities: Vec<Entity> = stmt
@@ -935,6 +937,7 @@ impl KnowledgeService {
                     updated_at: row.get(9)?,
                     color: row.get(10)?,
                     hidden: row.get::<_, i32>(11)? != 0,
+                    community_id: row.get::<_, Option<i32>>(12)?,
                     ..Default::default()
                 })
             })
@@ -2026,7 +2029,7 @@ impl KnowledgeService {
             let _ = db.execute(
                 "INSERT OR IGNORE INTO cache_entities (id, name, entity_type, description, aliases, properties, confidence, source_file, created_at, updated_at)
                  VALUES (?1, ?2, ?3, '', '[]', '{}', 0.5, ?4, ?5, ?5)",
-                rusqlite::params![doc_id, doc_name, "content", file_path, now],
+                rusqlite::params![doc_id, doc_name, "__file__", file_path, now],
             );
             extracted_entity_ids.push(doc_id.clone());
         }
@@ -3651,7 +3654,7 @@ impl KnowledgeService {
             "SELECT e.entity_type, r.relation_type, COUNT(*) AS cnt
              FROM cache_entities e
              JOIN cache_relations r ON (e.id = r.from_id OR e.id = r.to_id)
-             WHERE e.entity_type NOT IN ('concept', 'content')  -- skip generic types
+             WHERE e.entity_type NOT IN ('concept', '__file__')  -- skip system types
              GROUP BY e.entity_type, r.relation_type
              ORDER BY e.entity_type, cnt DESC"
         ).map_err(|e| e.to_string())?;
@@ -5322,6 +5325,7 @@ impl KnowledgeService {
                     hidden: row.get::<_, i32>("hidden")? != 0,
                     importance: row.get("importance").ok(),
                     importance_level: row.get("importance_level").ok(),
+                    community_id: row.get("community_id").ok(),
                     display_tier: None,
                 })
             })
@@ -5345,6 +5349,7 @@ impl KnowledgeService {
                     hidden: row.get::<_, i32>("hidden")? != 0,
                     importance: row.get("importance").ok(),
                     importance_level: row.get("importance_level").ok(),
+                    community_id: row.get("community_id").ok(),
                     display_tier: None,
                 })
             })
@@ -6627,10 +6632,18 @@ impl KnowledgeService {
             }
         }
 
-        let summary = format!("去重完成: {total_pairs}对候选, LLM确认{merged}对重复, 已合并");
+        // Clean up orphans created by merge (entities left with 0 relations)
+        let orphan_cleaned = db.execute(
+            "UPDATE cache_entities SET hidden = 1 WHERE hidden = 0
+             AND id NOT IN (SELECT DISTINCT from_id FROM cache_relations)
+             AND id NOT IN (SELECT DISTINCT to_id FROM cache_relations)",
+            [],
+        ).unwrap_or(0) as u32;
+
+        let summary = format!("去重完成: {total_pairs}对候选, LLM确认{merged}对重复已合并, 清理{orphan_cleaned}个新孤岛");
         let _ = db.execute(
             "INSERT INTO cache_maintenance_log (id, task, started_at, completed_at, entities_scanned, entities_fixed, llm_calls, status, summary) VALUES (?1, 'dedup', ?2, ?2, ?3, ?4, ?5, 'completed', ?6)",
-            rusqlite::params![task_id, now, total_pairs, merged, (total_pairs + 9) / 10, summary],
+            rusqlite::params![task_id, now, total_pairs, merged + orphan_cleaned, (total_pairs + 9) / 10, summary],
         );
 
         Ok(MaintenanceReport {
@@ -7135,7 +7148,7 @@ impl KnowledgeService {
             .map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
 
         if entity_ids.is_empty() {
-            return Ok(CommunityReport { communities: 0, modularity: 0.0, total_entities: 0, iterations: 0 });
+            return Ok(CommunityReport { communities: 0, modularity: 0.0, total_entities: 0, iterations: 0, assignments: vec![] });
         }
 
         // Build adjacency
@@ -7231,13 +7244,23 @@ impl KnowledgeService {
         }
         q /= m.max(1.0);
 
-        // Write community IDs to entity scores
+        // Write community IDs to entity scores AND cache_entities
         let now = chrono::Utc::now().to_rfc3339();
+        let mut assignments: Vec<crate::models::knowledge::CommunityAssignment> = Vec::with_capacity(n);
         for (i, eid) in entity_ids.iter().enumerate() {
+            let cid = community[i] as u32;
             let _ = db.execute(
                 "INSERT OR REPLACE INTO cache_entity_scores (entity_id, community_id, updated_at) VALUES (?1, ?2, ?3)",
-                rusqlite::params![eid, community[i] as u32, now],
+                rusqlite::params![eid, cid, now],
             );
+            let _ = db.execute(
+                "UPDATE cache_entities SET community_id = ?1 WHERE id = ?2",
+                rusqlite::params![cid as i32, eid],
+            );
+            assignments.push(crate::models::knowledge::CommunityAssignment {
+                entity_id: eid.clone(),
+                community_id: cid,
+            });
         }
 
         Ok(CommunityReport {
@@ -7245,6 +7268,7 @@ impl KnowledgeService {
             modularity: q,
             total_entities: n as u32,
             iterations,
+            assignments,
         })
     }
 

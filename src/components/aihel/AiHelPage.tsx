@@ -86,11 +86,14 @@ export default function AiHelPage() {
     return () => { cancelled = true; };
   }, [panelCollapsed]);
 
-  // Click entity → show detail in Main Content
-  const selectedEntityId = useKnowledgeStore((s) => s.selectedEntityId);
+  // Double-click entity → navigate to detail page
+  const navEntityId = useKnowledgeStore((s) => s.navEntityId);
   useEffect(() => {
-    if (selectedEntityId) setMainContentMode("entity");
-  }, [selectedEntityId, setMainContentMode]);
+    if (navEntityId) {
+      setMainContentMode("entity");
+      useKnowledgeStore.getState().setNavEntityId(null);
+    }
+  }, [navEntityId, setMainContentMode]);
 
   const handleUploadClick = useCallback(async () => {
     try {

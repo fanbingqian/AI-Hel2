@@ -12,6 +12,8 @@ interface KnowledgeState {
   isLoading: boolean;
   selectedEntityId: string | null;
   selectedEntityDetail: EntityDetail | null;
+  navEntityId: string | null;
+  setNavEntityId: (id: string | null) => void;
   fetchGraphData: (namespace?: string) => Promise<void>;
   selectEntity: (id: string) => Promise<void>;
   searchQuery: string;
@@ -89,6 +91,8 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
   isLoading: false,
   selectedEntityId: null,
   selectedEntityDetail: null,
+  navEntityId: null,
+  setNavEntityId: (id) => set({ navEntityId: id }),
   searchQuery: "",
 
   focusedNodeId: null,
@@ -160,13 +164,9 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
     return referenceEntityToChat(entityId);
   },
 
-  loadInferences: async (namespace) => {
-    try {
-      const data = await getInferences(namespace ?? null, 50, "pending");
-      set({ inferences: Array.isArray(data) ? data : [] });
-    } catch (e) {
-      console.error("Failed to load inferences:", e);
-    }
+  loadInferences: async (_namespace) => {
+    // Inference service pending Nexus migration — skip dead Heimdall :8765 endpoint
+    set({ inferences: [] });
   },
 
   setShowInferenceEdges: (show) => set({ showInferenceEdges: show }),
@@ -279,12 +279,14 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
     set((s) => ({
       graphSettings2D: { ...s.graphSettings2D, ...updates },
       showOrphans: updates.showOrphans !== undefined ? updates.showOrphans : s.showOrphans,
+      showFiles: updates.showFiles !== undefined ? updates.showFiles : s.showFiles,
     }));
   },
 
   resetGraphSettings2D: () => set({
     graphSettings2D: { ...DEFAULT_GRAPH_SETTINGS_2D },
     showOrphans: true,
+    showFiles: true,
   }),
 
   loadGraphSettings: async () => {
@@ -298,13 +300,19 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
             searchQuery: (twoD.searchQuery as string) ?? DEFAULT_GRAPH_SETTINGS_2D.searchQuery,
             showTags: (twoD.showTags as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showTags,
             showAttachments: (twoD.showAttachments as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showAttachments,
-            showOrphans: (twoD.showOrphans as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showOrphans,
+            showOrphans: (twoD.showOrphans as boolean) ?? true,
+            showFiles: (twoD.showFiles as boolean) ?? true,
+            minDegree: (twoD.minDegree as number) ?? DEFAULT_GRAPH_SETTINGS_2D.minDegree,
             minImportance: (twoD.minImportance as number) ?? DEFAULT_GRAPH_SETTINGS_2D.minImportance,
+            typeFilter: (twoD.typeFilter as string[]) ?? DEFAULT_GRAPH_SETTINGS_2D.typeFilter,
+            communityMode: (twoD.communityMode as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.communityMode,
+            useWebGL: (twoD.useWebGL as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.useWebGL,
             explorationDepth: (twoD.explorationDepth as number) ?? DEFAULT_GRAPH_SETTINGS_2D.explorationDepth,
             colorGroups: (twoD.colorGroups as GraphSettings2D["colorGroups"]) ?? DEFAULT_GRAPH_SETTINGS_2D.colorGroups,
             showArrows: (twoD.showArrows as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showArrows,
             showTypeRing: (twoD.showTypeRing as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showTypeRing,
             textOpacity: (twoD.textOpacity as number) ?? DEFAULT_GRAPH_SETTINGS_2D.textOpacity,
+            edgeOpacity: (twoD.edgeOpacity as number) ?? DEFAULT_GRAPH_SETTINGS_2D.edgeOpacity,
             nodeSize: (twoD.nodeSize as number) ?? DEFAULT_GRAPH_SETTINGS_2D.nodeSize,
             linkThickness: (twoD.linkThickness as number) ?? DEFAULT_GRAPH_SETTINGS_2D.linkThickness,
             centerForce: (twoD.centerForce as number) ?? DEFAULT_GRAPH_SETTINGS_2D.centerForce,
@@ -314,6 +322,7 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
             dragForce: (twoD.dragForce as number) ?? DEFAULT_GRAPH_SETTINGS_2D.dragForce,
           },
           showOrphans: (twoD.showOrphans as boolean) ?? true,
+          showFiles: (twoD.showFiles as boolean) ?? true,
         });
         try {
           const etf = localStorage.getItem("hermes_knowledge_type_filter");

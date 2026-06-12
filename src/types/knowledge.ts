@@ -10,6 +10,7 @@ export interface Entity {
   importance_level?: string;
   source_file?: string;
   namespace?: string;
+  community_id?: number;
   created_at: string;
   updated_at: string;
   color?: string;
@@ -153,13 +154,19 @@ export interface GraphSettings2D {
   showTags: boolean;
   showAttachments: boolean;
   showOrphans: boolean;
+  showFiles: boolean;
+  minDegree: number;
   minImportance: number;
   explorationDepth: number;
+  typeFilter: string[];
+  communityMode: boolean;
+  useWebGL: boolean;
   colorGroups: Array<{ id: string; name: string; color: string; pattern: string }>;
   // 外观
   showArrows: boolean;
   showTypeRing: boolean;
   textOpacity: number;
+  edgeOpacity: number;
   nodeSize: number;
   linkThickness: number;
   // 力度
@@ -175,19 +182,25 @@ export const DEFAULT_GRAPH_SETTINGS_2D: GraphSettings2D = {
   showTags: true,
   showAttachments: true,
   showOrphans: true,
+  showFiles: true,
+  minDegree: 0,
   minImportance: 0,
   explorationDepth: 2,
+  typeFilter: [],
+  communityMode: false,
+  useWebGL: true,
   colorGroups: [],
   showArrows: false,
   showTypeRing: true,
   textOpacity: 0.85,
-  nodeSize: 0.5,         // Multiplier applied to base radius (4+degree*0.5)
+  edgeOpacity: 0.6,
+  nodeSize: 1,           // Multiplier applied to Obsidian-style base radius
   linkThickness: 1.25,   // Multiplier for stroke-width
-  centerForce: 1,        // Multiplier × baseCenter(0.006) = center strength
-  repelForce: 3,         // Multiplier × baseRepel(3000)/nodeCount = repulsion
-  attractForce: 3,       // Multiplier × baseSpring(0.008) = link strength
-  linkLength: 0.5,       // Multiplier × baseLinkLen(80) = target distance
-  dragForce: 8,          // Dragging force multiplier (sets spring boost while dragging)
+  centerForce: 0.5,
+  repelForce: 10,        // 0-20 range
+  attractForce: 0.5,     // 0-1 range
+  linkLength: 250,       // 30-500 range
+  dragForce: 8,
 };
 
 export interface LintWarning {

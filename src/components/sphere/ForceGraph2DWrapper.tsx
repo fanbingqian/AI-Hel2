@@ -60,20 +60,21 @@ export function ForceGraph2DWrapper() {
   const selectEntity = useKnowledgeStore((s) => s.selectEntity);
   const graphSettings = useKnowledgeStore((s) => s.graphSettings2D);
   const showOrphans = useKnowledgeStore((s) => s.showOrphans);
-  const showFiles = useKnowledgeStore((s) => s.showFiles);
   selectedIdRef.current = selectedId;
 
-  // Build graph data — pass live settings so filter controls actually work
+  // Build graph data
   const { nodes, links } = useMemo(() => {
     const gd = buildGraphData(entities, relations, inferences, {
       focusedNodeId: null,
       focusDepth: graphSettings.explorationDepth ?? 2,
       showOrphans,
-      showFiles,
+      showFiles: true,
       showInferenceEdges: true,
       nodeRelSize: graphSettings.nodeSize ?? 1,
       searchQuery: graphSettings.searchQuery || "",
+      minDegree: graphSettings.minDegree ?? 0,
       minImportance: graphSettings.minImportance ?? 0,
+      typeFilter: graphSettings.typeFilter || [],
       colorGroups: graphSettings.colorGroups || [],
     });
     const ns = gd.nodes.map((n) => ({
@@ -81,7 +82,7 @@ export function ForceGraph2DWrapper() {
       _color: n.entityType && n.entityType !== "unknown" ? typeColor(n.entityType) : "#8b95a3",
     }));
     return { nodes: ns, links: [...gd.links, ...gd.infLinks] as FGLink[] };
-  }, [entities, relations, inferences]);
+  }, [entities, relations, inferences, graphSettings, showOrphans]);
 
   // Data key for re-simulation
   const dataKey = useMemo(() => `${nodes.length}-${links.length}`, [nodes.length, links.length]);
@@ -110,7 +111,7 @@ export function ForceGraph2DWrapper() {
 
     // Zoom behavior (D3 handles SVG transform, we handle pan/scale)
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.2, 3])
+      .scaleExtent([1 / 128, 8])
       .on("zoom", (e) => {
         transformRef.current = { x: e.transform.x, y: e.transform.y, k: e.transform.k };
         gRoot.attr("transform", e.transform.toString());
@@ -124,10 +125,10 @@ export function ForceGraph2DWrapper() {
     const prevNodes = simReadyRef.current ? simRef.current?.nodes : undefined;
 
     simRef.current = createSimulation(nodeIds, edgeArray, {
-      centering: (s.centerForce || 1) * 0.006,
-      repulsion: 3000 * (s.repelForce || 3),
-      attraction: 0.008 * (s.attractForce || 3),
-      linkDistance: 80 * (s.linkLength || 0.5),
+      centering: (s.centerForce ?? 0.5) * 0.05,
+      repulsion: 100 * (s.repelForce ?? 10),
+      attraction: 1.0 * (s.attractForce ?? 0.5),
+      linkDistance: s.linkLength ?? 250,
       dragForce: s.dragForce || 8,
       alphaDecay: 0.04,
     }, W, H, prevNodes);
@@ -145,14 +146,24 @@ export function ForceGraph2DWrapper() {
     const linkEl = linkG.selectAll("path").data(links).join("path")
       .attr("stroke", EDGE_COLOR)
       .attr("stroke-width", (s.linkThickness ?? 1.25) * 0.4)
+      .attr("opacity", s.edgeOpacity ?? 0.6)
       .attr("fill", "none");
+
+    // Type rings (colored border behind node, shows entity type)
+    const ringG = gRoot.append("g").attr("class", "rings");
+    const ringEl = ringG.selectAll("circle").data(nodes).join("circle")
+      .attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5) + 3)
+      .attr("fill", "none")
+      .attr("stroke", (d: any) => d._color || "#8b95a3")
+      .attr("stroke-width", 2)
+      .attr("opacity", s.showTypeRing ? 0.5 : 0)
+      .attr("pointer-events", "none");
 
     const nodeG = gRoot.append("g").attr("class", "nodes");
     const nodeEl = nodeG.selectAll("circle").data(nodes).join("circle")
       .attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5))
       .attr("fill", (d: any) => d._color || "#8b95a3")
-      .attr("stroke", "rgba(0,0,0,0.3)")
-      .attr("stroke-width", 1)
+      .attr("stroke", "none")
       .attr("cursor", "pointer");
 
     const lblG = gRoot.append("g").attr("class", "labels");
@@ -160,28 +171,41 @@ export function ForceGraph2DWrapper() {
       .attr("fill", "#aaa").attr("font-size", 5).attr("text-anchor", "middle")
       .text((d: any) => d.name.length > 12 ? d.name.slice(0, 11) + "…" : d.name);
 
-    // ── Drag (D3 handles mouse tracking) ──
+    // ── Drag (only activates after 3px movement, click doesn't restart sim) ──
+    const dragState = { active: false, sx: 0, sy: 0 };
     const dragBehavior = d3.drag<any, any>()
       .on("start", (e, d) => {
         dragIdRef.current = d.id;
-        const sim = simRef.current!;
-        const sn = sim.nodes.get(d.id);
-        if (sn) pinNode(sim, d.id, sn.x, sn.y);
+        dragState.active = false;
+        dragState.sx = e.x; dragState.sy = e.y;
       })
       .on("drag", (e, d) => {
+        const sim = simRef.current!;
         const world = screenToWorld(e.sourceEvent, svgRef.current!, transformRef.current);
-        if (world) movePinned(simRef.current!, d.id, world.x, world.y);
+        if (!world) return;
+        if (!dragState.active) {
+          const dx = e.x - dragState.sx, dy = e.y - dragState.sy;
+          if (dx * dx + dy * dy < 9) return; // < 3px → ignore
+          dragState.active = true;
+          const sn = sim.nodes.get(d.id);
+          if (sn) pinNode(sim, d.id, sn.x, sn.y);
+        }
+        movePinned(sim, d.id, world.x, world.y);
       })
       .on("end", (e, d) => {
         dragIdRef.current = null;
-        unpinNode(simRef.current!, d.id);
+        if (dragState.active) {
+          unpinNode(simRef.current!, d.id);
+          dragState.active = false;
+        }
       });
     nodeEl.call(dragBehavior);
 
     // Hover
     nodeEl.on("mouseenter", function (e, d) {
       hoverIdRef.current = d.id;
-      d3.select(this).attr("stroke", HOVER_RING).attr("stroke-width", 3);
+      d3.select(this).attr("stroke", HOVER_RING).attr("stroke-width", 2);
+      ringEl.attr("opacity", 0);  // hide rings on hover
       const related = new Set<string>();
       links.forEach((l) => {
         if (l.source === d.id) related.add(l.target as string);
@@ -193,7 +217,8 @@ export function ForceGraph2DWrapper() {
     });
     nodeEl.on("mouseleave", function () {
       hoverIdRef.current = null;
-      nodeEl.attr("stroke", "rgba(0,0,0,0.3)").attr("stroke-width", 1).attr("opacity", 1);
+      ringEl.attr("opacity", graphSettings.showTypeRing ? 0.5 : 0);
+      nodeEl.attr("stroke", "none").attr("opacity", 1);
       linkEl.attr("stroke", EDGE_COLOR);
       lblEl.attr("opacity", 1);
     });
@@ -213,6 +238,8 @@ export function ForceGraph2DWrapper() {
       }
 
       // Update positions
+      ringEl.attr("cx", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
+        .attr("cy", (d: any) => sim.nodes.get(d.id)?.y ?? 0);
       nodeEl.attr("cx", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
         .attr("cy", (d: any) => sim.nodes.get(d.id)?.y ?? 0);
       lblEl.attr("x", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
@@ -237,10 +264,10 @@ export function ForceGraph2DWrapper() {
     const sim = simRef.current;
     if (!sim) return;
     const s = graphSettings;
-    sim.config.centering = (s.centerForce || 1) * 0.006;
-    sim.config.repulsion = 3000 * (s.repelForce || 3);
-    sim.config.attraction = 0.008 * (s.attractForce || 3);
-    sim.config.linkDistance = 80 * (s.linkLength || 0.5);
+    sim.config.centering = (s.centerForce ?? 0.5) * 0.05;
+    sim.config.repulsion = 100 * (s.repelForce ?? 10);
+    sim.config.attraction = 1.0 * (s.attractForce ?? 0.5);
+    sim.config.linkDistance = s.linkLength ?? 250;
     sim.config.dragForce = s.dragForce || 8;
     sim.alpha = 1.0;
     sim.frozen = false;
@@ -255,7 +282,11 @@ export function ForceGraph2DWrapper() {
     const svg = d3.select(svgRef.current!);
     const s = graphSettings;
     if (prev.nodeSize !== s.nodeSize) {
-      svg.selectAll("circle").attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5));
+      svg.selectAll(".rings circle").attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5) + 3);
+      svg.selectAll(".nodes circle").attr("r", (d: any) => Math.max(5, (d._sphereRadius || 5) * 1.4) * (s.nodeSize || 0.5));
+    }
+    if (prev.showTypeRing !== s.showTypeRing) {
+      svg.selectAll(".rings circle").attr("opacity", s.showTypeRing ? 0.5 : 0);
     }
     if (prev.linkThickness !== s.linkThickness) {
       svg.selectAll(".links path").attr("stroke-width", (s.linkThickness ?? 1.25) * 0.4);
@@ -263,38 +294,39 @@ export function ForceGraph2DWrapper() {
     if (prev.textOpacity !== s.textOpacity) {
       svg.selectAll(".labels text").attr("opacity", s.textOpacity ?? 0.85);
     }
+    if (prev.edgeOpacity !== s.edgeOpacity) {
+      svg.selectAll(".links path").attr("opacity", s.edgeOpacity ?? 0.6);
+    }
   }, [graphSettings]);
 
-  // Selected ring update + zoom to node
+  // Selected ring update
   useEffect(() => {
     const svg = d3.select(svgRef.current!);
-    svg.selectAll("circle")
-      .attr("stroke", (d: any) => d.id === selectedId ? SEL_RING : "rgba(0,0,0,0.3)")
-      .attr("stroke-width", (d: any) => d.id === selectedId ? 4 : 1);
-
-    // Zoom to selected node
-    if (selectedId && simRef.current) {
-      const sim = simRef.current;
-      const sn = sim.nodes.get(selectedId);
-      if (sn) {
-        const W = dims.w, H = dims.h;
-        const tx = W / 2 - sn.x! * 2.5;
-        const ty = H / 2 - sn.y! * 2.5;
-        const g = svg.select("g");
-        g.transition().duration(500)
-          .attr("transform", `translate(${tx},${ty}) scale(2.5)`);
-        transformRef.current = { x: tx, y: ty, k: 2.5 };
-      }
-    }
+    svg.selectAll(".nodes circle")
+      .attr("stroke", (d: any) => d.id === selectedId ? SEL_RING : "none")
+      .attr("stroke-width", (d: any) => d.id === selectedId ? 2 : 0);
   }, [selectedId]);
 
   const detailEntity = useMemo(() => {
-    if (!detailNode) return null;
-    const e = entities.find((en) => en.id === detailNode.id);
+    // From graph click: detailNode has the full node data
+    const lookupId = detailNode?.id || (selectedId || undefined);
+    if (!lookupId) return null;
+    const e = entities.find((en) => en.id === lookupId);
     if (!e) return null;
     const rels = relations.filter((r) => r.from_id === e.id || r.to_id === e.id).slice(0, 10);
     return { entity: e, relations: rels };
-  }, [detailNode, entities, relations]);
+  }, [detailNode, selectedId, entities, relations]);
+
+  // Empty state
+  if (!entities.length && !relations.length) {
+    return <div className={styles.container} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#808080", fontSize: 13 }}>知识图谱为空 — 请先导入文档或对话以提取知识</div>;
+  }
+  if (!nodes.length && entities.length > 0) {
+    return <div className={styles.container} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "#808080", fontSize: 13 }}>
+      <span>当前筛选条件下无可见实体</span>
+      <span style={{ fontSize: 11, color: "#666" }}>共 {entities.length} 个实体 — 检查最低重要性、最小连接数或搜索过滤</span>
+    </div>;
+  }
 
   return (
     <div ref={containerRef} className={styles.container}>
@@ -328,7 +360,7 @@ export function ForceGraph2DWrapper() {
       )}
 
       {/* Detail panel */}
-      {detailNode && detailEntity && (
+      {(detailNode || selectedId) && detailEntity && (
         <div className={styles.detailPanel} style={{
           position: "absolute", top: 48, right: 12, zIndex: 10,
           background: "rgba(16,20,28,0.94)", borderRadius: 10,
@@ -340,7 +372,7 @@ export function ForceGraph2DWrapper() {
             <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: typeColor(detailEntity.entity.entity_type), color: "#fff" }}>
               {detailEntity.entity.entity_type}
             </span>
-            <button onClick={() => setDetailNode(null)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16 }}>×</button>
+            <button onClick={() => { setDetailNode(null); selectEntity(""); }} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16 }}>×</button>
           </div>
           {detailEntity.entity.description && (
             <div style={{ marginBottom: 8, color: "#999", lineHeight: 1.5 }}>{detailEntity.entity.description}</div>

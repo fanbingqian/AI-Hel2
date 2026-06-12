@@ -194,14 +194,7 @@ export function tick(state: SimState, width: number, height: number): void {
     node.vx *= damping;
     node.vy *= damping;
 
-    // Soft circular boundary
-    const dxc = node.x - centerX;
-    const dyc = node.y - centerY;
-    const distC = Math.sqrt(dxc * dxc + dyc * dyc);
-    if (distC > boundaryRadius && distC > 0) {
-      node.x = centerX + (dxc / distC) * boundaryRadius;
-      node.y = centerY + (dyc / distC) * boundaryRadius;
-    }
+    // No hard boundary — centering force controls overall spread
 
     const sp = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
     if (sp > maxNodeSpeed) maxNodeSpeed = sp;
@@ -209,8 +202,10 @@ export function tick(state: SimState, width: number, height: number): void {
 
   // 4. Alpha decay (hermes-desktop: alpha *= 0.96 each frame)
   if (dragId) {
-    if (state.alpha < 0.3) state.alpha = 0.3;
-    state.alpha *= 0.98; // slow decay during drag
+    // Gradual ramp-up — no instant jump that causes visual flash
+    if (state.alpha < 0.01) state.alpha = 0.01; // seed if frozen
+    if (state.alpha < 0.15) state.alpha += 0.02; // ramp up ~8 frames
+    state.alpha *= 0.98;
     state.frozen = false;
     state.convergenceFrames = 0;
   } else if (!state.frozen) {
@@ -244,8 +239,7 @@ export function pinNode(state: SimState, id: string, x: number, y: number): void
   node.y = y;
   node.vx = 0;
   node.vy = 0;
-  state.alpha = Math.max(state.alpha, 0.3);
-  state.frozen = false;
+  state.frozen = false;       // unfreeze; alpha rises gradually in tick
   state.convergenceFrames = 0;
 }
 

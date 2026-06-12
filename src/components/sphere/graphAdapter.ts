@@ -60,7 +60,9 @@ export function buildGraphData(
     showInferenceEdges: boolean;
     nodeRelSize: number;
     searchQuery?: string;
+    minDegree?: number;
     minImportance?: number;
+    typeFilter?: string[];
     colorGroups?: ColorGroup[];
   },
 ) {
@@ -98,7 +100,9 @@ export function buildGraphData(
   }
 
   const searchLower = (opts.searchQuery || "").toLowerCase().trim();
+  const minDeg = opts.minDegree ?? 0;
   const minImp = opts.minImportance ?? 0;
+  const typeFilter = (opts.typeFilter || []).map(t => t.toLowerCase());
   const groups = opts.colorGroups ?? [];
 
   const visibleIds = new Set<string>();
@@ -109,6 +113,8 @@ export function buildGraphData(
     if (!opts.showFiles && e.entity_type === "__file__") continue;
     const degree = degMap.get(e.id) ?? 0;
     if (!opts.showOrphans && degree === 0) continue;
+    if (degree < minDeg) continue;
+    if (typeFilter.length > 0 && !typeFilter.includes(e.entity_type.toLowerCase())) continue;
     if (opts.focusedNodeId && e.id !== opts.focusedNodeId && !focusNeighbors.has(e.id)) continue;
     if (searchLower && !e.name.toLowerCase().includes(searchLower)) continue;
     if (minImp > 0 && (e.importance ?? 0) < minImp) continue;

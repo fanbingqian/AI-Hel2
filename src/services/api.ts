@@ -431,6 +431,7 @@ export interface CommunityReport {
   modularity: number;
   total_entities: number;
   iterations: number;
+  assignments: Array<{ entity_id: string; community_id: number }>;
 }
 
 export interface CausalChainReport {

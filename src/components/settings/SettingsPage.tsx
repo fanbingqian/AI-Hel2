@@ -927,6 +927,8 @@ function NexusSection() {
     if (!nexusConfig) return;
     const updated = { ...nexusConfig, [field]: value };
     setNexusConfig(updated);
+    // Auto-save on every change so config persists across page switches
+    try { await invoke("save_nexus_config", { config: updated }); } catch {}
   };
 
   const handleSave = async () => {
@@ -1751,10 +1753,17 @@ function NexusProviderRow({ nexusConfig, onFieldChange, onVerify }: {
           {checking ? "验证中..." : "验证连接"}
         </button>
         <button type="button" className={styles.btnPrimary} onClick={async () => {
-          if (!nexusConfig) { setResult({ok: false, msg: "配置未加载"}); return; }
-          try { await invoke("save_nexus_config", { config: nexusConfig }); setResult({ok: true, msg: "已保存"}); } catch(e: any) { setResult({ok: false, msg: String(e)}); }
-        }} style={{ padding: "4px 12px", fontSize: 12, background: "#444" }}>
-          保存
+          const cleared = { llm_mode: nexusConfig?.llm_mode || "custom", llm_base_url: "", llm_api_key: "", llm_model: "", llm_provider: "" };
+          try {
+            await invoke("save_nexus_config", { config: cleared });
+            onFieldChange("llm_base_url", "");
+            onFieldChange("llm_api_key", "");
+            onFieldChange("llm_model", "");
+            onFieldChange("llm_provider", "");
+            setResult({ok: true, msg: "已重置，可配置新模型"});
+          } catch(e: any) { setResult({ok: false, msg: String(e)}); }
+        }} style={{ padding: "4px 12px", fontSize: 12, background: "#555" }}>
+          重置
         </button>
       </div>
       {result && (

@@ -123,10 +123,7 @@ function Settings2D() {
               aria-label="搜索"
             />
           </div>
-          <ConfigToggle label="标签" value={g.showTags} onChange={(v) => update({ showTags: v })} />
-          <ConfigToggle label="附件" value={g.showAttachments} onChange={(v) => update({ showAttachments: v })} />
-          <ConfigToggle label="孤立节点" value={showOrphans} onChange={setShowOrphans} />
-          <ConfigToggle label="文件节点" value={showFiles} onChange={setShowFiles} />
+          <ConfigToggle label="孤立节点" value={showOrphans} onChange={(v) => { setShowOrphans(v); update({ showOrphans: v }); }} />
           <ConfigSlider label="最低重要性" value={g.minImportance} min={0} max={1} step={0.05} onChange={(v) => update({ minImportance: v })} />
           <ConfigSlider label="探索深度" value={g.explorationDepth} min={1} max={3} step={1} onChange={(v) => update({ explorationDepth: v })} />
 
@@ -177,6 +174,7 @@ function Settings2D() {
           <ConfigSlider label="文本透明度" value={g.textOpacity} min={0.1} max={1} step={0.05} onChange={(v) => update({ textOpacity: v })} />
           <ConfigSlider label="节点大小" value={g.nodeSize} min={0.3} max={3} step={0.05} onChange={(v) => update({ nodeSize: v })} />
           <ConfigSlider label="连线粗细" value={g.linkThickness} min={0.1} max={2.5} step={0.05} onChange={(v) => update({ linkThickness: v })} />
+          <ConfigSlider label="边线透明度" value={g.edgeOpacity} min={0.05} max={1} step={0.05} onChange={(v) => update({ edgeOpacity: v })} />
         </div>
       )}
 
@@ -184,15 +182,23 @@ function Settings2D() {
       <SectionHeader name="forces" label="力度" expanded={expanded.has("forces")} onToggle={() => toggleSection("forces")} />
       {expanded.has("forces") && (
         <div className={styles.section}>
-          <ConfigSlider label="向心力" value={g.centerForce} min={0.05} max={3} step={0.05} onChange={(v) => update({ centerForce: v })} />
-          <ConfigSlider label="排斥力" value={g.repelForce} min={0.1} max={5} step={0.05} onChange={(v) => update({ repelForce: v })} />
-          <ConfigSlider label="吸引力" value={g.attractForce} min={0.05} max={3} step={0.05} onChange={(v) => update({ attractForce: v })} />
-          <ConfigSlider label="连线长度" value={g.linkLength} min={0.3} max={3} step={0.05} onChange={(v) => update({ linkLength: v })} />
+          <ConfigSlider label="向心力" value={g.centerForce} min={0} max={1} step={0.01} onChange={(v) => update({ centerForce: v })} />
+          <ConfigSlider label="节点排斥力" value={g.repelForce} min={0} max={20} step={0.5} onChange={(v) => update({ repelForce: v })} />
+          <ConfigSlider label="相连节点吸引力" value={g.attractForce} min={0} max={1} step={0.01} onChange={(v) => update({ attractForce: v })} />
+          <ConfigSlider label="连线长度" value={g.linkLength} min={30} max={500} step={5} onChange={(v) => update({ linkLength: v })} />
           <ConfigSlider label="拖拽引力" value={g.dragForce} min={1} max={15} step={0.5} onChange={(v) => update({ dragForce: v })} />
         </div>
       )}
 
-      <button type="button" className={styles.resetBtn} onClick={reset}>恢复默认</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button type="button" className={styles.resetBtn} onClick={reset}>恢复默认</button>
+        <button type="button" className={styles.resetBtn} onClick={() => {
+          const g = useKnowledgeStore.getState().graphSettings2D;
+          useKnowledgeStore.getState().saveGraphSettings();
+          localStorage.setItem("aihel2_graph_defaults", JSON.stringify(g));
+          alert("当前配置已保存为默认设置");
+        }} style={{ background: "#2C5F2C", borderColor: "#3a7a3a", color: "#b3d9b3" }}>保存为默认</button>
+      </div>
     </>
   );
 }
