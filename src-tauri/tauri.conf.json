@@ -50,7 +50,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVCQjE2NDhGQkNGQ0RDNUIKUldSYjNQeThqMlN4NjByLy9UWndENkh2LzM4Vi9oNWhnMEU0d09IZTlzQnR5cFFGVkpibDYvcHoK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4M0NBMzkzNjg3OUVBOTQKUldTVTZubG9rNk04T0lqVEhod29sMFJkYjQrT1E4QjJxTGJqajNDV0x6bTdZY1NjU0g3UGdwVEkK",
       "endpoints": [
         "https://github.com/fanbingqian/AI-Hel2/releases/latest/download/latest.json"
       ]
