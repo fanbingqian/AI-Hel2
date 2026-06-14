@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
+use tokio::task;
 
 /// In-memory cache of active QR sessions (platform → session_id mapping).
 /// The actual session state lives in temp files managed by the Python helper.
@@ -46,7 +47,8 @@ pub struct PlatformConfigStatus {
 pub struct GatewaySetupService {
     script_path: PathBuf,
     python_path: PathBuf,
-    hermes_home: PathBuf,
+    hermes_home: PathBuf,       // AI-Hel2 data dir (for sessions/logs)
+    agent_home: PathBuf,        // Agent's ~/.hermes (for config.yaml)
     active_sessions: Mutex<HashMap<String, QrSessionInfo>>,
 }
 
@@ -54,6 +56,9 @@ impl GatewaySetupService {
     pub fn new(hermes_home: &std::path::Path) -> Self {
         let script_path = Self::find_helper_script();
         let python_path = Self::find_python();
+
+        // Agent's home: ~/.hermes (where config.yaml lives)
+        let agent_home = dirs_home().join(".hermes");
 
         // Load persisted sessions (survive app restarts per-platform)
         let sessions_path = hermes_home.join("gateway_sessions.json");
@@ -68,6 +73,7 @@ impl GatewaySetupService {
             script_path,
             python_path,
             hermes_home: hermes_home.to_path_buf(),
+            agent_home,
             active_sessions: Mutex::new(active_sessions),
         }
     }
@@ -292,6 +298,14 @@ impl GatewaySetupService {
         ("teams", "Microsoft Teams"),
     ];
 
+    fn agent_config_path(&self) -> PathBuf {
+        self.agent_home.join("config.yaml")
+    }
+
+    fn agent_cron_dir(&self) -> PathBuf {
+        self.agent_home.join("cron")
+    }
+
     fn platform_label(key: &str) -> String {
         // Check the known list first
         for (k, label) in Self::ALL_NON_QR_PLATFORMS {
@@ -446,6 +460,134 @@ impl GatewaySetupService {
             .and_then(|s| s.get(platform).cloned())
     }
 
+    /// Async: Begin QR registration (runs script on blocking thread to avoid UI freeze).
+    pub async fn qr_start_async(&self, platform: &str) -> Result<QrSessionInfo, String> {
+        let python = self.python_path.clone();
+        let script = self.script_path.clone();
+        let platform_owned = platform.to_string();
+        let output = task::spawn_blocking(move || {
+            let mut cmd = Command::new(&python);
+            cmd.arg(&script)
+                .arg("qr-start")
+                .arg(&platform_owned)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .env("PYTHONIOENCODING", "utf-8")
+                .env("PYTHONUTF8", "1");
+            #[cfg(windows)]
+            { use std::os::windows::process::CommandExt; cmd.creation_flags(0x08000000); }
+            let output = cmd.output().map_err(|e| format!("Failed to run gateway helper: {e}"))?;
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if !output.status.success() {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                    if let Some(err) = parsed.get("error").and_then(|v| v.as_str()) {
+                        return Err(err.to_string());
+                    }
+                }
+                return Err(format!("Script exited with {}: {}", output.status, stderr.trim()));
+            }
+            Ok(stdout.trim().to_string())
+        }).await.map_err(|e| format!("Gateway task panicked: {e}"))??;
+
+        let parsed: serde_json::Value = serde_json::from_str(&output).map_err(|e| format!("Parse error: {e}"))?;
+        if parsed.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+            let err = parsed.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            return Err(err.to_string());
+        }
+        let info = QrSessionInfo {
+            session_id: parsed.get("session_id").and_then(|v| v.as_str()).ok_or("Missing session_id")?.to_string(),
+            platform: platform.to_string(),
+            qr_url: parsed.get("qr_url").and_then(|v| v.as_str()).ok_or("Missing qr_url")?.to_string(),
+            timeout_seconds: parsed.get("timeout_seconds").and_then(|v| v.as_u64()).unwrap_or(600) as u32,
+        };
+        {
+            let mut sessions = self.active_sessions.lock().map_err(|e| e.to_string())?;
+            sessions.insert(platform.to_string(), info.clone());
+        }
+        self.save_sessions()?;
+        Ok(info)
+    }
+
+    /// Async: Poll QR registration status (runs script on blocking thread).
+    pub async fn qr_poll_async(&self, platform: &str) -> Result<QrPollResult, String> {
+        let session_id = {
+            let sessions = self.active_sessions.lock().map_err(|e| e.to_string())?;
+            sessions.get(platform).map(|s| s.session_id.clone())
+                .ok_or_else(|| format!("No active QR session for {}", platform))?
+        };
+        let python = self.python_path.clone();
+        let script = self.script_path.clone();
+        let platform_owned = platform.to_string();
+        let sid = session_id.clone();
+        let output = task::spawn_blocking(move || {
+            let mut cmd = Command::new(&python);
+            cmd.arg(&script).arg("qr-poll").arg(&platform_owned).arg(&sid)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .env("PYTHONIOENCODING", "utf-8")
+                .env("PYTHONUTF8", "1");
+            #[cfg(windows)]
+            { use std::os::windows::process::CommandExt; cmd.creation_flags(0x08000000); }
+            let output = cmd.output().map_err(|e| format!("Failed to run gateway helper: {e}"))?;
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if !output.status.success() {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                    if let Some(err) = parsed.get("error").and_then(|v| v.as_str()) {
+                        return Err(err.to_string());
+                    }
+                }
+                return Err(format!("Script exited with {}: {}", output.status, stderr.trim()));
+            }
+            Ok(stdout.trim().to_string())
+        }).await.map_err(|e| format!("Gateway task panicked: {e}"))??;
+
+        let parsed: serde_json::Value = serde_json::from_str(&output).map_err(|e| format!("Parse error: {e}"))?;
+        if parsed.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+            let err = parsed.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            return Err(err.to_string());
+        }
+        let status = parsed.get("status").and_then(|v| v.as_str()).unwrap_or("waiting").to_string();
+        Ok(QrPollResult {
+            status: status.clone(),
+            message: parsed.get("message").and_then(|v| v.as_str()).map(String::from),
+            qr_url: parsed.get("qr_url").and_then(|v| v.as_str()).map(String::from),
+            credentials: parsed.get("credentials").map(|v| {
+                let mut creds = HashMap::new();
+                if let Some(obj) = v.as_object() {
+                    for (k, val) in obj { creds.insert(k.clone(), val.as_str().unwrap_or("").to_string()); }
+                }
+                creds
+            }),
+        })
+    }
+
+    /// Async: Cancel QR session (runs script on blocking thread).
+    pub async fn qr_cancel_async(&self, platform: &str) -> Result<(), String> {
+        let session_id = {
+            let mut sessions = self.active_sessions.lock().map_err(|e| e.to_string())?;
+            sessions.remove(platform).map(|s| s.session_id)
+        };
+        if let Some(sid) = session_id {
+            self.save_sessions()?;
+            let python = self.python_path.clone();
+            let script = self.script_path.clone();
+            let _ = task::spawn_blocking(move || {
+                let mut cmd = Command::new(&python);
+                cmd.arg(&script).arg("qr-cancel").arg(&sid)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .env("PYTHONIOENCODING", "utf-8")
+                    .env("PYTHONUTF8", "1");
+                #[cfg(windows)]
+                { use std::os::windows::process::CommandExt; cmd.creation_flags(0x08000000); }
+                cmd.output()
+            }).await;
+        }
+        Ok(())
+    }
+
     fn save_sessions(&self) -> Result<(), String> {
         let sessions = self.active_sessions.lock().map_err(|e| e.to_string())?;
         let path = self.hermes_home.join("gateway_sessions.json");
@@ -459,7 +601,7 @@ impl GatewaySetupService {
 
     /// Read gateway-related config from config.yaml
     pub fn read_gateway_config(&self) -> Result<serde_json::Value, String> {
-        let config_path = self.hermes_home.join("config.yaml");
+        let config_path = self.agent_config_path();
         if !config_path.exists() {
             return Ok(serde_json::json!({"platforms": {}}));
         }
@@ -485,7 +627,7 @@ impl GatewaySetupService {
         platform_key: &str,
         config: &serde_json::Value,
     ) -> Result<(), String> {
-        let config_path = self.hermes_home.join("config.yaml");
+        let config_path = self.agent_config_path();
 
         let mut root: serde_yaml::Value = if config_path.exists() {
             let content =
@@ -532,7 +674,7 @@ impl GatewaySetupService {
 
     /// Remove a platform configuration from config.yaml
     pub fn remove_platform_config(&self, platform_key: &str) -> Result<(), String> {
-        let config_path = self.hermes_home.join("config.yaml");
+        let config_path = self.agent_config_path();
         if !config_path.exists() {
             return Ok(());
         }
@@ -629,7 +771,7 @@ impl GatewaySetupService {
     // ── Cron job management ─────────────────────────────────────────────
 
     fn cron_dir(&self) -> PathBuf {
-        self.hermes_home.join("cron")
+        self.agent_cron_dir()
     }
 
     fn cron_jobs_path(&self) -> PathBuf {
@@ -764,5 +906,16 @@ impl GatewaySetupService {
         }
         entries.sort_by(|a, b| b.cmp(a)); // newest first
         Ok(entries.into_iter().take(5).collect())
+    }
+}
+
+fn dirs_home() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/tmp"))
     }
 }

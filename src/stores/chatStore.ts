@@ -313,6 +313,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     console.log("[chatStore] sendMessage sessionId=", sessionId);
     invoke("chat_completions", {
       messages: msgs,
+      model: getActiveModel(),
       sessionId,
     }).catch((e: any) => {
       console.error("[chatStore] chat_completions failed:", e);

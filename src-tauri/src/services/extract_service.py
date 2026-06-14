@@ -145,7 +145,7 @@ def call_llm(messages, config):
 
 
 def build_prompt(text, context, mode, max_entities):
-    """Build extraction prompt following Nexus doc 0.4 template."""
+    """Build extraction prompt — Nexus v2 with identity, 4-step check, confidence_reason."""
     mode_instructions = {
         "text": "以下是一段文本，请提取其中的知识实体和关系。",
         "document": "以下是一份文档内容，请提取其中的知识实体和关系。",
@@ -162,57 +162,94 @@ def build_prompt(text, context, mode, max_entities):
             context_block = f"## 上下文\n{context}\n\n"
 
     prompt = f"""## 角色
-你是知识筛选器。从以下内容中提取值得长期保存的知识。
+你是 Nexus 知识引擎的核心推理模块。
+
+你的工作是：将用户的知识转化为可长期检索、可跨文档关联的结构化知识图谱。
+你不是在"提取关键词"——你是在为用户构建他自己的知识维基。
+
+知识引擎有三层结构：
+  第一层 文档层 — 每个文档是独立实体
+  第二层 命名实体层 — 地名/组织名/人名/自然名/时间名
+  第三层 信息实体层 — 概念/项目/工具/术语
 
 {context_block}## 待提取内容
 {text}
 
-## 规则
-1. 只提取具有长期知识价值的实体：概念、工具、项目、人物、术语
-2. 忽略：问候语、临时指代、通用词、纯格式标记
-3. 最多提取 {max_entities} 个最重要的实体，宁少勿滥
-4. 如有对话上下文，利用它理解指代和省略
-5. entity_type 自由描述：tool/concept/person/project/document
-6. namespace 描述语义领域：如 "技术/AI"、"业务/金融"、"科学/生物"
-7. {mode_instructions.get(mode, mode_instructions['text'])}
+## 命名实体提取（5 种固定类型，不限量但有置信度门槛）
 
-## 输出 JSON（只输出 JSON，不要其他文字）
+只提取以下类型的命名实体：
+  location         — 地名（如：巴厘岛、金巴兰湾）
+  organization     — 企业/组织名（如：长实集团、阿雅娜度假酒店）
+  person           — 人名（如：李嘉诚）
+  natural_feature  — 自然景观名（如：Rock Bar岩石酒吧、京打马尼火山）
+  time             — 时间（只提取有历史/叙事意义的，如：90年代、2008年；不提取纯日程）
+
+命名实体规则：
+  - 每个实体必须给出 confidence（0.0-1.0）和 confidence_reason（一句话解释）
+  - confidence < 0.5 的命名实体不提取
+  - 同类型实体超过 20 个时，只取 confidence 最高的 20 个
+  - 时间实体每个文档最多 5 个
+
+## 信息实体提取（自由类型，四步检查筛选）
+
+对非命名实体的候选实体，按以下四步评估：
+
+检查 1: 信息密度
+  它是否具体、可独立存在？去掉它文段还完整吗？
+  具体独立 → confidence 0.7+
+  泛泛描述 → 跳过
+
+检查 2: 分散度
+  贯穿全文还是局部提及？
+  贯穿全文 → confidence +0.1
+  集中一处 → 不加分
+
+检查 3: 独特性
+  用户特有术语还是行业通用词？
+  用户特有 → confidence +0.1
+  行业通用 → 不加分
+
+检查 4: 关联性
+  是否可以和其他实体形成关系？
+  可关联 → 同时提取关系
+  孤立 → 降低优先级
+
+信息实体规则：
+  - 每步最多取 3 个，不足不凑数——宁缺毋滥
+  - confidence < 0.5 不提取
+  - 最多提取 {max_entities} 个信息实体
+
+## 置信度分级标准（所有实体通用）
+
+0.9 — 核心主题，贯穿全文，用户特有知识
+0.7 — 具体名称，清晰定义
+0.5 — 有信息量但不够独立
+< 0.5 — 不提取
+
+每个实体必须输出 confidence_reason，说明为什么给这个分数。
+SaySelf (EMNLP 2024) 证明：输出理由能显著提升 LLM 自评置信度的可靠性。
+
+## 输出 JSON（只输出 JSON）
 {{
   "entities": [
     {{
       "name": "实体名",
-      "type": "自由描述 (如 tool/concept/person/project)",
-      "namespace": "语义领域 (如 技术/开发工具)",
+      "type": "location/organization/person/natural_feature/time（命名实体）或自由描述（信息实体）",
       "description": "一句话描述",
       "confidence": 0.0,
-      "properties": {{
-        "key1": {{"type": "text", "value": "值"}},
-        "key2": {{"type": "number", "value": 42}},
-        "key3": {{"type": "date", "value": "2025-03-15"}},
-        "key4": {{"type": "tags", "value": ["标签1", "标签2"]}}
-      }}
+      "confidence_reason": "一句话解释为什么给这个置信度",
+      "properties": {{}}
     }}
   ],
   "relations": [
     {{
       "from": "实体A名",
-      "type": "关系描述 (如 uses/depends_on/creates)",
+      "type": "uses/depends_on/contains/located_in/creates",
       "to": "实体B名",
       "confidence": 0.0
     }}
   ]
 }}
-
-## properties 说明
-- 每个 property 包含 "type" (text/number/date/tags/url) 和 "value"
-- 从文本中提取结构化属性，如版本号、创建日期、状态、标签等
-- 无可用属性时输出空对象 {{}}
-
-## 置信度参考
-0.9 - 核心概念、用户明确标记为重要
-0.7 - 具体名称、清晰定义
-0.5 - 有信息量但不够独立
-0.3 - 边缘提及（通常不输出）
 
 请提取："""
 
@@ -341,7 +378,9 @@ def build_classify_prompt(text, file_type, file_name, existing_dirs):
     truncated = text[:max_chars]
 
     prompt = f"""## 角色
-你是文档分类助手。根据文档内容，建议最佳归档位置。
+你是 Nexus 知识引擎的文档管理员。
+
+你的任务是：阅读文档内容，判断它属于什么主题领域，并建议最佳的文件夹归档位置。
 
 ## 已有目录
 {dirs_list}
@@ -349,6 +388,12 @@ def build_classify_prompt(text, file_type, file_name, existing_dirs):
 ## 文件名
 {file_name}
 类型: {file_type.upper()}
+
+## 判断标准
+1. 主题识别：文档主要讨论什么？（技术/旅行/金融/历史/个人...）
+2. 文件夹命名：用简洁的中文名词（2-4个字），如：技术架构、旅行攻略、投资分析
+3. 不要创建过于细分的文件夹，如果已有合适的文件夹则使用已有名称
+4. 同类文档归入同一文件夹，不要创建只有1个文件的文件夹
 
 ## 要求
 1. folder: 从已有目录中选择最合适的，如果都不合适则建议新目录名
@@ -375,7 +420,9 @@ def build_summarize_prompt(text, file_type, file_name):
         truncation_note = f"\n(原文共 {len(text)} 字符，已截取前 {max_chars} 字符)"
 
     prompt = f"""## 角色
-你是文档分析助手。请将以下 {file_type.upper()} 文件内容总结为结构化的 Markdown 文档。
+你是 Nexus 知识引擎的文档分析助手。
+
+你的任务是：将文档内容总结为结构化的 Markdown，保留关键信息供知识图谱索引。
 
 ## 文件名
 {file_name}
@@ -445,7 +492,8 @@ def call_llm_multimodal(messages, config):
         return None, "No API key configured"
 
     try:
-        if provider == "anthropic":            url = f"{base_url}/messages"
+        if provider == "anthropic":
+            url = f"{base_url}/messages"
             # Convert messages format for Anthropic: extract image data from content
             anthropic_content = []
             for msg in messages:

@@ -23,29 +23,29 @@ pub fn list_platform_status(
 
 /// Begin QR registration for a platform. Returns session info with QR URL.
 #[tauri::command]
-pub fn gateway_qr_start(
+pub async fn gateway_qr_start(
     service: State<'_, GatewaySetupService>,
     platform: String,
 ) -> Result<QrSessionInfo, String> {
-    service.qr_start(&platform)
+    service.qr_start_async(&platform).await
 }
 
 /// Poll QR registration status for a platform.
 #[tauri::command]
-pub fn gateway_qr_poll(
+pub async fn gateway_qr_poll(
     service: State<'_, GatewaySetupService>,
     platform: String,
 ) -> Result<QrPollResult, String> {
-    service.qr_poll(&platform)
+    service.qr_poll_async(&platform).await
 }
 
 /// Cancel an active QR registration session for a platform.
 #[tauri::command]
-pub fn gateway_qr_cancel(
+pub async fn gateway_qr_cancel(
     service: State<'_, GatewaySetupService>,
     platform: String,
 ) -> Result<(), String> {
-    service.qr_cancel(&platform)
+    service.qr_cancel_async(&platform).await
 }
 
 /// Get active QR session info for a platform (for restoring UI state after reload).

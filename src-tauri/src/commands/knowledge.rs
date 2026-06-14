@@ -37,7 +37,7 @@ pub async fn get_entity_detail(
     entity_id: String,
 ) -> Result<EntityDetail, String> {
     let service = state.service.lock().await;
-    service.get_entity_detail(&entity_id).await
+    service.get_entity_detail_local(&entity_id)
 }
 
 #[tauri::command]
@@ -57,7 +57,7 @@ pub async fn search_entities(
     limit: Option<u32>,
 ) -> Result<Vec<EntitySummary>, String> {
     let service = state.service.lock().await;
-    service.search_entities(&query, entity_type.as_deref(), limit).await
+    service.search_entities_local(&query, entity_type.as_deref(), limit)
 }
 
 #[tauri::command]
@@ -235,6 +235,16 @@ pub async fn nexus_reindex_all(
     state: State<'_, KnowledgeState>,
 ) -> Result<NexusReindexResult, String> {
     let service = state.service.lock().await;
+    service.nexus_reindex_all()
+}
+
+/// Force reindex: clear extraction cache first, then re-extract all wiki files.
+#[tauri::command]
+pub async fn nexus_reindex_force(
+    state: State<'_, KnowledgeState>,
+) -> Result<NexusReindexResult, String> {
+    let service = state.service.lock().await;
+    service.clear_extraction_cache()?;
     service.nexus_reindex_all()
 }
 
@@ -551,4 +561,14 @@ pub async fn nexus_verify_synthesis(
 ) -> Result<VerifyReport, String> {
     let service = state.service.lock().await;
     service.nexus_verify_synthesis()
+}
+
+/// Reset knowledge graph: keep document entities, delete all others.
+/// Clears relations, extraction cache, entity scores. Use before reindex_all.
+#[tauri::command]
+pub async fn nexus_reset_graph(
+    state: State<'_, KnowledgeState>,
+) -> Result<serde_json::Value, String> {
+    let service = state.service.lock().await;
+    service.reset_knowledge_graph()
 }

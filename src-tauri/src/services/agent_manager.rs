@@ -347,8 +347,9 @@ impl AgentManager {
             }
         }
 
-        // HERMES_HOME: use configured home directory
-        cmd.env("HERMES_HOME", self.hermes_home.to_str().unwrap_or("."));
+        // HERMES_HOME: use user's Hermes Agent home (~/.hermes), separate from AI-Hel2 data
+        let hermes_home = dirs_home().join(".hermes");
+        cmd.env("HERMES_HOME", hermes_home.to_str().unwrap_or("."));
         // Allow open access on localhost (no user auth required)
         cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
 
@@ -672,8 +673,9 @@ impl AgentManager {
     }
 
     /// Ensure .env has required Gateway settings for local access.
+    /// Writes to Agent's ~/.hermes/.env so the Agent process can read it.
     fn ensure_dot_env(&self) {
-        let env_path = self.hermes_home.join(".env");
+        let env_path = dirs_home().join(".hermes").join(".env");
         let mut content = fs::read_to_string(&env_path).unwrap_or_default();
         let mut changed = false;
         if !content.contains("GATEWAY_ALLOW_ALL_USERS") {
@@ -685,9 +687,9 @@ impl AgentManager {
             changed = true;
         }
         if changed {
-            let _ = fs::create_dir_all(self.hermes_home.as_path());
+            let _ = fs::create_dir_all(dirs_home().join(".hermes"));
             let _ = fs::write(&env_path, &content);
-            log::info!("Wrote .env with Gateway settings");
+            log::info!("Wrote .env at {}", env_path.display());
         }
     }
 
@@ -830,6 +832,17 @@ impl AgentManager {
         let all: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
         let start = if all.len() > lines { all.len() - lines } else { 0 };
         all[start..].to_vec()
+    }
+}
+
+fn dirs_home() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/tmp"))
     }
 }
 

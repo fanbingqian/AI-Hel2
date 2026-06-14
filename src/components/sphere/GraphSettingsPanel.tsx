@@ -65,6 +65,19 @@ function SectionHeader({
   );
 }
 
+const TYPE_COLOR_DEFAULTS = [
+  { type: "__file__",    label: "文档",    defaultColor: "#e8e8e8" },
+  { type: "location",   label: "地名",    defaultColor: "#4CAF50" },
+  { type: "organization", label: "组织",  defaultColor: "#FF9800" },
+  { type: "person",     label: "人物",    defaultColor: "#E91E63" },
+  { type: "natural_feature", label: "自然景观", defaultColor: "#8BC34A" },
+  { type: "time",       label: "时间",    defaultColor: "#00BCD4" },
+  { type: "concept",    label: "概念",    defaultColor: "#7C4DFF" },
+  { type: "project",    label: "项目",    defaultColor: "#FF5722" },
+  { type: "tool",       label: "工具",    defaultColor: "#2196F3" },
+  { type: "inferred",   label: "推断(锁)", defaultColor: "#888888" },
+];
+
 // ── 2D Settings Panel (hermes-desktop style) ─────────────
 
 function Settings2D() {
@@ -76,7 +89,18 @@ function Settings2D() {
   const showFiles = useKnowledgeStore((s) => s.showFiles);
   const setShowFiles = useKnowledgeStore((s) => s.setShowFiles);
 
+  const saveGraphSettings = useKnowledgeStore((s) => s.saveGraphSettings);
+
+  // Auto-save settings on every change (debounced)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => saveGraphSettings(), 500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [g]);
+
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["filters", "appearance", "forces"]));
+  const [typeColorsOpen, setTypeColorsOpen] = useState(false);
 
   const toggleSection = (name: string) => {
     setExpanded((prev) => {
@@ -124,8 +148,9 @@ function Settings2D() {
             />
           </div>
           <ConfigToggle label="孤立节点" value={showOrphans} onChange={(v) => { setShowOrphans(v); update({ showOrphans: v }); }} />
-          <ConfigSlider label="最低重要性" value={g.minImportance} min={0} max={1} step={0.05} onChange={(v) => update({ minImportance: v })} />
-          <ConfigSlider label="探索深度" value={g.explorationDepth} min={1} max={3} step={1} onChange={(v) => update({ explorationDepth: v })} />
+          <ConfigToggle label="文档节点" value={showFiles} onChange={(v) => { setShowFiles(v); update({ showFiles: v }); }} />
+          <ConfigToggle label="社区折叠" value={g.communityMode} onChange={(v) => update({ communityMode: v })} />
+          <ConfigToggle label="推断实体可新建文档" value={g.inferredCreatable ?? false} onChange={(v) => update({ inferredCreatable: v })} />
 
           <div className={styles.colorGroupSection}>
             <div className={styles.colorGroupHeader}>
@@ -162,6 +187,40 @@ function Settings2D() {
               </div>
             ))}
           </div>
+
+        </div>
+      )}
+
+      {/* ── Type Colors ── */}
+      <SectionHeader name="typeColors" label="类型颜色" expanded={typeColorsOpen} onToggle={() => setTypeColorsOpen(!typeColorsOpen)} />
+      {typeColorsOpen && (
+        <div className={styles.section}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+            <button type="button" className={styles.resetBtn} style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => update({ typeColors: {} })}>恢复默认</button>
+          </div>
+          {TYPE_COLOR_DEFAULTS.map(({ type, label, defaultColor }) => {
+            const current = g.typeColors?.[type] ?? defaultColor;
+            return (
+              <div key={type} className={styles.colorGroupRow}>
+                <input
+                  type="color"
+                  value={current}
+                  className={styles.colorPicker}
+                  onChange={(e) => update({ typeColors: { ...g.typeColors, [type]: e.target.value } })}
+                  title={`${label} (${type})`}
+                  aria-label={label}
+                />
+                <span style={{ flex: 1, fontSize: 11, color: "#ccc" }}>{label} <span style={{ color: "#555", fontSize: 10 }}>{type}</span></span>
+                {g.typeColors?.[type] && (
+                  <button type="button" className={styles.removeBtn} onClick={() => {
+                    const next = { ...g.typeColors };
+                    delete next[type];
+                    update({ typeColors: next });
+                  }}>↩</button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -192,12 +251,6 @@ function Settings2D() {
 
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <button type="button" className={styles.resetBtn} onClick={reset}>恢复默认</button>
-        <button type="button" className={styles.resetBtn} onClick={() => {
-          const g = useKnowledgeStore.getState().graphSettings2D;
-          useKnowledgeStore.getState().saveGraphSettings();
-          localStorage.setItem("aihel2_graph_defaults", JSON.stringify(g));
-          alert("当前配置已保存为默认设置");
-        }} style={{ background: "#2C5F2C", borderColor: "#3a7a3a", color: "#b3d9b3" }}>保存为默认</button>
       </div>
     </>
   );

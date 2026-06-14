@@ -539,6 +539,7 @@ pub fn run() {
             commands::knowledge::nexus_store,
             commands::knowledge::nexus_extract_from_file,
             commands::knowledge::nexus_reindex_all,
+            commands::knowledge::nexus_reindex_force,
             commands::knowledge::nexus_run_synthesis,
             commands::knowledge::nexus_analyze_types,
             // Nexus P5: Entity CRUD + feedback + merge
@@ -573,6 +574,7 @@ pub fn run() {
             commands::knowledge::nexus_scan_conflicts,
             commands::knowledge::nexus_get_evolution,
             commands::knowledge::nexus_verify_synthesis,
+            commands::knowledge::nexus_reset_graph,
             // Wiki
             commands::wiki::get_wiki_file_tree,
             commands::wiki::read_wiki_file,
@@ -614,7 +616,6 @@ pub fn run() {
             commands::voice::voice_diagnose,
             commands::voice::tts_speak,
             commands::voice::tts_preview,
-            commands::voice::check_voice_deps,
             commands::voice::start_ptt_recording,
             commands::voice::stop_ptt_recording,
             commands::voice::cancel_ptt_recording,

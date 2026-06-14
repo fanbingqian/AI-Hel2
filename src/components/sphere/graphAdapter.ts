@@ -1,5 +1,29 @@
 import type { Entity, Relation, InferenceCandidate } from "../../types/knowledge";
 
+// Vibrant type-based colors — one per major entity category.
+// Only inferred entities get gray (#888888).
+const TYPE_COLORS: Record<string, string> = {
+  __file__:        "#e8e8e8",  // 文档: 浅灰白
+  document:        "#e8e8e8",
+  location:        "#4CAF50",  // 地名: 绿色
+  organization:    "#FF9800",  // 组织: 橙色
+  person:          "#E91E63",  // 人物: 粉色
+  natural_feature: "#8BC34A",  // 自然景观: 浅绿
+  time:            "#00BCD4",  // 时间: 青色
+  concept:         "#7C4DFF",  // 概念: 紫色
+  project:         "#FF5722",  // 项目: 深橙
+  tool:            "#2196F3",  // 工具: 蓝色
+  inferred:        "#888888",  // 推断: 灰色(唯一!)
+};
+
+const TYPE_COLORS_LIST = Object.values(TYPE_COLORS);
+let _tcIdx = 0;
+function typeColor(et: string): string {
+  if (TYPE_COLORS[et]) return TYPE_COLORS[et];
+  // Unknown types cycle through the palette
+  return TYPE_COLORS_LIST[_tcIdx++ % TYPE_COLORS_LIST.length];
+}
+
 export interface FGNode {
   id: string;
   name: string;
@@ -7,8 +31,8 @@ export interface FGNode {
   degree: number;
   val: number;
   color: string;
-  isFile: boolean;
   isOrphan: boolean;
+  isInferred: boolean;
   _entity: Entity;
   _sphereRadius: number;
 }
@@ -19,7 +43,6 @@ export interface FGLink {
   weight: number;
   merged: boolean;
   relationTypes: string[];
-  isFileEdge: boolean;
   _relation?: Relation;
 }
 
@@ -64,6 +87,7 @@ export function buildGraphData(
     minImportance?: number;
     typeFilter?: string[];
     colorGroups?: ColorGroup[];
+    typeColors?: Record<string, string>;
   },
 ) {
   const degMap = new Map<string, number>();
@@ -120,10 +144,26 @@ export function buildGraphData(
     if (minImp > 0 && (e.importance ?? 0) < minImp) continue;
 
     visibleIds.add(e.id);
-    const isFile = e.entity_type === "__file__";
     const isOrphan = degree === 0;
-    const cgColor = matchColorGroup(e.name, groups);
-    const color = cgColor ?? "#8b95a3"; // Obsidian --graph-node default gray
+    const isInferred = e.inferred === true;
+    const isFile = e.entity_type === "__file__" || e.entity_type === "document";
+
+    // Color logic:
+    //   - Inferred entities ONLY → gray (#888888, locked)
+    //   - File/Document nodes → light gray-white
+    //   - User custom typeColors → highest priority for non-inferred
+    //   - Color group regex match → next
+    //   - Built-in type-based color → fallback
+    let color: string;
+    if (isInferred) {
+      color = "#888888"; // 灰色 — 仅推断实体，不可覆盖
+    } else if (isFile) {
+      color = opts.typeColors?.["__file__"] ?? "#e8e8e8";
+    } else {
+      const custom = opts.typeColors?.[e.entity_type];
+      const cgColor = matchColorGroup(e.name, groups);
+      color = custom ?? cgColor ?? typeColor(e.entity_type);
+    }
 
     nodes.push({
       id: e.id,
@@ -132,8 +172,8 @@ export function buildGraphData(
       degree,
       val: nodeVal(degree),
       color,
-      isFile,
       isOrphan,
+      isInferred,
       _entity: e,
       _sphereRadius: nodeRadius(degree),
     });
@@ -160,7 +200,6 @@ export function buildGraphData(
     weight: g.weight,
     merged: g.relationTypes.length > 1,
     relationTypes: g.relationTypes,
-    isFileEdge: g.relationTypes.some((rt) => rt === "contains" || rt === "wikilink"),
   }));
 
   const infLinks: FGLink[] = [];
@@ -173,7 +212,6 @@ export function buildGraphData(
         weight: inf.confidence,
         merged: false,
         relationTypes: ["__inference__"],
-        isFileEdge: false,
       });
     }
   }

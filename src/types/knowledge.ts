@@ -16,6 +16,7 @@ export interface Entity {
   color?: string;
   hidden: boolean;
   display_tier?: number;
+  inferred?: boolean;
 }
 
 export interface Relation {
@@ -151,17 +152,13 @@ export interface EntityUpdates {
 export interface GraphSettings2D {
   // 筛选
   searchQuery: string;
-  showTags: boolean;
-  showAttachments: boolean;
   showOrphans: boolean;
   showFiles: boolean;
-  minDegree: number;
-  minImportance: number;
-  explorationDepth: number;
   typeFilter: string[];
   communityMode: boolean;
-  useWebGL: boolean;
+  inferredCreatable: boolean;
   colorGroups: Array<{ id: string; name: string; color: string; pattern: string }>;
+  typeColors: Record<string, string>;
   // 外观
   showArrows: boolean;
   showTypeRing: boolean;
@@ -179,28 +176,24 @@ export interface GraphSettings2D {
 
 export const DEFAULT_GRAPH_SETTINGS_2D: GraphSettings2D = {
   searchQuery: "",
-  showTags: true,
-  showAttachments: true,
   showOrphans: true,
   showFiles: true,
-  minDegree: 0,
-  minImportance: 0,
-  explorationDepth: 2,
   typeFilter: [],
   communityMode: false,
-  useWebGL: true,
+  inferredCreatable: false,
   colorGroups: [],
+  typeColors: {},
   showArrows: false,
-  showTypeRing: true,
+  showTypeRing: false,
   textOpacity: 0.85,
   edgeOpacity: 0.6,
-  nodeSize: 1,           // Multiplier applied to Obsidian-style base radius
-  linkThickness: 1.25,   // Multiplier for stroke-width
-  centerForce: 0.5,
-  repelForce: 10,        // 0-20 range
-  attractForce: 0.5,     // 0-1 range
-  linkLength: 250,       // 30-500 range
-  dragForce: 8,
+  nodeSize: 1.25,
+  linkThickness: 0.4,
+  centerForce: 0.1,
+  repelForce: 11,
+  attractForce: 0.8,
+  linkLength: 70,
+  dragForce: 4,
 };
 
 export interface LintWarning {

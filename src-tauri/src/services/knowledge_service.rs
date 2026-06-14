@@ -39,8 +39,9 @@ fn parse_relation_type(raw: &str) -> RelationType {
 }
 
 pub struct KnowledgeService {
-    heimdall_url: String,
-    client: reqwest::Client,
+    // TODO: remove after migrating all callers to Nexus/local SQLite
+    _heimdall_url: String,
+    _client: reqwest::Client,
     cache_db: Mutex<SqliteConnection>,
     wiki_dir: PathBuf,
     hermes_home: PathBuf,
@@ -55,18 +56,14 @@ impl KnowledgeService {
         let wiki_dir = hermes_home.join("wiki");
 
         let service = Self {
-            heimdall_url: "http://127.0.0.1:8765".into(),
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .unwrap_or_default(),
+            _heimdall_url: String::new(),
+            _client: reqwest::Client::builder().build().unwrap_or_default(),
             cache_db: Mutex::new(db),
             wiki_dir,
             hermes_home: hermes_home.to_path_buf(),
         };
 
         service.init_cache_tables()?;
-        service.migrate_from_heimdall_db()?;
         Ok(service)
     }
 
@@ -82,7 +79,7 @@ impl KnowledgeService {
         let mut scanned = 0u32;
         let mut failed = 0u32;
         let mut total_new = 0u32;
-        let total_updated = 0u32;
+        let mut skipped = 0u32;
         let mut errors: Vec<String> = Vec::new();
 
         // Phase 1: Collect all existing .md file paths
@@ -95,6 +92,7 @@ impl KnowledgeService {
                 Ok(result) => {
                     scanned += 1;
                     total_new += result.entity_count;
+                    if result.skipped { skipped += 1; }
                 }
                 Err(e) => {
                     failed += 1;
@@ -108,8 +106,8 @@ impl KnowledgeService {
 
         if scanned > 0 || failed > 0 || stale_entities > 0 {
             log::info!(
-                "Wiki scan: {} files scanned ({} new, {} updated), {} failed, {} stale entities cleaned",
-                scanned, total_new, total_updated, failed, stale_entities
+                "Wiki scan: {} files ({}/{} extracted, {} skipped), {} failed, {} stale cleaned",
+                scanned, total_new - skipped, total_new, skipped, failed, stale_entities
             );
         }
 
@@ -117,7 +115,7 @@ impl KnowledgeService {
             scanned,
             failed,
             total_new,
-            total_updated,
+            total_updated: total_new - skipped,
             stale_entities_removed: stale_entities,
             stale_relations_removed: stale_relations,
             errors,
@@ -258,6 +256,7 @@ impl KnowledgeService {
             ("005_inferred_edges", include_str!("../../migrations/005_inferred_edges.sql")),
             ("006_community_id", include_str!("../../migrations/006_community_id.sql")),
             ("007_merge_content_file", include_str!("../../migrations/007_merge_content_file.sql")),
+            ("008_inferred_entities", include_str!("../../migrations/008_inferred_entities.sql")),
         ];
 
         for (i, (_name, sql)) in migrations.iter().enumerate() {
@@ -331,7 +330,8 @@ impl KnowledgeService {
                 created_at TEXT DEFAULT '',
                 updated_at TEXT DEFAULT '',
                 color TEXT,
-                hidden INTEGER DEFAULT 0
+                hidden INTEGER DEFAULT 0,
+                inferred INTEGER DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS cache_relations (
                 id TEXT PRIMARY KEY,
@@ -416,6 +416,13 @@ impl KnowledgeService {
                 source_path TEXT,
                 FOREIGN KEY (entity_id) REFERENCES cache_entities(id)
             );
+            CREATE TABLE IF NOT EXISTS cache_content_index (
+                source_path TEXT PRIMARY KEY,
+                source_type TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                extracted_at TEXT,
+                entity_count INTEGER DEFAULT 0
+            );
             CREATE TABLE IF NOT EXISTS cache_synthesis_log (
                 id TEXT PRIMARY KEY,
                 task TEXT NOT NULL,
@@ -462,8 +469,8 @@ impl KnowledgeService {
         let _ = db.execute_batch(
             "INSERT OR IGNORE INTO cache_relations (id, from_id, to_id, relation_type, label, weight, bidirectional)
              SELECT hex(randomblob(16)), from_id, to_id, 'related_to', label, weight, bidirectional
-             FROM cache_relations WHERE relation_type = 'related_to';
-             DELETE FROM cache_relations WHERE relation_type = 'related_to';",
+             FROM cache_relations WHERE relation_type = 'co_occurs';
+             DELETE FROM cache_relations WHERE relation_type = 'co_occurs';",
         );
 
         // Deduplicate before creating UNIQUE index
@@ -847,7 +854,7 @@ impl KnowledgeService {
 
     #[allow(dead_code)]
     pub fn heimdall_url(&self) -> &str {
-        &self.heimdall_url
+        &self._heimdall_url
     }
 
     pub async fn get_graph_data(
@@ -871,7 +878,7 @@ impl KnowledgeService {
             }
             local_result => {
                 // Local empty or error — try Heimdall fallback
-                let mut url = format!("{}/api/knowledge/graph-data?mode={}", self.heimdall_url, view_mode);
+                let mut url = format!("{}/api/knowledge/graph-data?mode={}", self._heimdall_url, view_mode);
                 if let Some(ns) = namespace {
                     url.push_str(&format!("&ns={ns}"));
                 }
@@ -882,7 +889,7 @@ impl KnowledgeService {
                     url.push_str(&format!("&hops={h}"));
                 }
 
-                match self.client.get(&url).send().await {
+                match self._client.get(&url).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         match resp.json::<GraphData>().await {
                             Ok(mut data) => {
@@ -914,7 +921,7 @@ impl KnowledgeService {
         let db = self.cache_db.lock().map_err(|e| e.to_string())?;
 
         let mut stmt = db
-            .prepare("SELECT id, name, entity_type, description, aliases, properties, confidence, source_file, created_at, updated_at, color, hidden, community_id FROM cache_entities WHERE hidden = 0 ORDER BY confidence DESC LIMIT 500")
+            .prepare("SELECT id, name, entity_type, description, aliases, properties, confidence, source_file, created_at, updated_at, color, hidden, community_id, COALESCE(inferred,0) FROM cache_entities WHERE hidden = 0 ORDER BY confidence DESC LIMIT 500")
             .map_err(|e| e.to_string())?;
 
         let entities: Vec<Entity> = stmt
@@ -938,6 +945,7 @@ impl KnowledgeService {
                     color: row.get(10)?,
                     hidden: row.get::<_, i32>(11)? != 0,
                     community_id: row.get::<_, Option<i32>>(12)?,
+                    inferred: row.get::<_, i32>(13)? != 0,
                     ..Default::default()
                 })
             })
@@ -1054,8 +1062,8 @@ impl KnowledgeService {
         match self.get_entity_detail_local(entity_id) {
             Ok(detail) if detail.entity.id == entity_id => Ok(detail),
             local_result => {
-                let url = format!("{}/api/entities/{entity_id}", self.heimdall_url);
-                match self.client.get(&url).send().await {
+                let url = format!("{}/api/entities/{entity_id}", self._heimdall_url);
+                match self._client.get(&url).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         match resp.json::<EntityDetail>().await {
                             Ok(detail) => Ok(detail),
@@ -1356,7 +1364,7 @@ impl KnowledgeService {
         match self.search_entities_local(query, entity_type, limit) {
             Ok(results) if !results.is_empty() => Ok(results),
             local_result => {
-                let mut url = format!("{}/api/entities/search?q={query}", self.heimdall_url);
+                let mut url = format!("{}/api/entities/search?q={query}", self._heimdall_url);
                 if let Some(t) = entity_type {
                     url.push_str(&format!("&type={t}"));
                 }
@@ -1364,7 +1372,7 @@ impl KnowledgeService {
                     url.push_str(&format!("&limit={l}"));
                 }
 
-                match self.client.get(&url).send().await {
+                match self._client.get(&url).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         match resp.json::<Vec<EntitySummary>>().await {
                             Ok(results) if !results.is_empty() => Ok(results),
@@ -1552,10 +1560,10 @@ impl KnowledgeService {
             local_result => {
                 let url = format!(
                     "{}/api/knowledge/paths?from={from_id}&to={to_id}&max_hops={hops}",
-                    self.heimdall_url
+                    self._heimdall_url
                 );
 
-                match self.client.get(&url).send().await {
+                match self._client.get(&url).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         match resp.json::<PathResult>().await {
                             Ok(result) if !result.paths.is_empty() => Ok(result),
@@ -1598,8 +1606,8 @@ impl KnowledgeService {
         };
 
         // Try to get knowledge snapshot from Heimdall
-        let snapshot_url = format!("{}/api/knowledge/overview", self.heimdall_url);
-        let knowledge_snapshot = match self.client.get(&snapshot_url).send().await {
+        let snapshot_url = format!("{}/api/knowledge/overview", self._heimdall_url);
+        let knowledge_snapshot = match self._client.get(&snapshot_url).send().await {
             Ok(resp) if resp.status().is_success() => {
                 resp.text().await.unwrap_or_default()
             }
@@ -2311,7 +2319,9 @@ impl KnowledgeService {
     }
 
     fn has_api_key(vars: &[(String, String)]) -> bool {
-        vars.iter().any(|(k, v)| k == "NEXUS_LLM_API_KEY" && !v.is_empty())
+        // hermes_builtin doesn't need an API key (uses local gateway)
+        let is_hermes = vars.iter().any(|(k, v)| k == "NEXUS_LLM_PROVIDER" && v == "hermes_builtin");
+        is_hermes || vars.iter().any(|(k, v)| k == "NEXUS_LLM_API_KEY" && !v.is_empty())
     }
 
     /// Spawn extract_service.py subprocess and return parsed JSON result.
@@ -2606,8 +2616,12 @@ impl KnowledgeService {
 
                 let entity_id = format!("canvas:{}", id);
                 db.execute(
-                    "INSERT OR REPLACE INTO cache_entities (id, name, entity_type, description, aliases, properties, confidence, llm_confidence, source_type, source_file, namespace, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, '', '[]', ?4, 0.7, 0.7, 'canvas', ?5, '画板', ?6, ?6)",
+                    "INSERT INTO cache_entities (id, name, entity_type, description, aliases, properties, confidence, llm_confidence, source_type, source_file, namespace, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, '', '[]', ?4, 0.7, 0.7, 'canvas', ?5, '画板', ?6, ?6)
+                     ON CONFLICT(id) DO UPDATE SET
+                       name=excluded.name, entity_type=excluded.entity_type,
+                       properties=excluded.properties, source_file=excluded.source_file,
+                       updated_at=excluded.updated_at",
                     rusqlite::params![entity_id, name, node_type, json_text, path, now],
                 ).unwrap_or(0);
                 entity_count += 1;
@@ -4353,11 +4367,11 @@ impl KnowledgeService {
         &self,
         namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
-        let mut url = format!("{}/api/importance/recalc", self.heimdall_url);
+        let mut url = format!("{}/api/importance/recalc", self._heimdall_url);
         if let Some(ns) = namespace {
             url.push_str(&format!("?namespace={ns}"));
         }
-        let resp = self.client.post(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.post(&url).send().await.map_err(|e| e.to_string())?;
         let body = resp.text().await.map_err(|e| e.to_string())?;
         let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse error: {e}"))?;
         Ok(v)
@@ -4369,11 +4383,11 @@ impl KnowledgeService {
         limit: u32,
         namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
-        let mut url = format!("{}/api/importance/top?limit={limit}", self.heimdall_url);
+        let mut url = format!("{}/api/importance/top?limit={limit}", self._heimdall_url);
         if let Some(ns) = namespace {
             url.push_str(&format!("&namespace={ns}"));
         }
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let body = resp.text().await.map_err(|e| e.to_string())?;
         let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse error: {e}"))?;
         Ok(v)
@@ -4384,11 +4398,11 @@ impl KnowledgeService {
         &self,
         namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
-        let mut url = format!("{}/api/importance/levels", self.heimdall_url);
+        let mut url = format!("{}/api/importance/levels", self._heimdall_url);
         if let Some(ns) = namespace {
             url.push_str(&format!("?namespace={ns}"));
         }
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let body = resp.text().await.map_err(|e| e.to_string())?;
         let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse error: {e}"))?;
         Ok(v)
@@ -5120,9 +5134,25 @@ impl KnowledgeService {
     }
 
     /// Build file nodes from wiki .md files with wikilink edges and file→entity contains edges.
+    fn load_existing_entity_names(&self) -> Result<std::collections::HashSet<String>, String> {
+        let db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        let mut stmt = db.prepare(
+            "SELECT DISTINCT LOWER(name) FROM cache_entities WHERE hidden = 0 AND entity_type != '__file__'"
+        ).map_err(|e| e.to_string())?;
+        let names: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(names.into_iter().collect())
+    }
+
     pub fn build_file_nodes_and_edges(&self) -> Result<(Vec<Entity>, Vec<Relation>), String> {
         let mut md_files = std::collections::HashSet::new();
         self.collect_md_files(&self.wiki_dir, &mut md_files);
+
+        // Pre-load existing entity names to avoid duplicating __file__ with extracted entities
+        let existing_names: std::collections::HashSet<String> = self
+            .load_existing_entity_names()?;
 
         let wiki_prefix = self.wiki_dir.to_string_lossy().replace('\\', "/");
         let mut file_entities = Vec::new();
@@ -5139,6 +5169,10 @@ impl KnowledgeService {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            // Skip if an extracted entity with the same name already exists (avoids duplicate display)
+            if existing_names.contains(&file_name.to_lowercase()) {
+                continue;
+            }
             let file_id = uuid::Uuid::new_v5(&WIKI_NAMESPACE, format!("__file__{}", full_path).as_bytes()).to_string();
             let file_entity = Entity {
                 id: file_id.clone(),
@@ -5226,9 +5260,20 @@ impl KnowledgeService {
                 serde_json::to_string(&e.entity_type).unwrap_or_else(|_| "\"concept\"".into());
 
             db.execute(
-                "INSERT OR REPLACE INTO cache_entities
+                "INSERT INTO cache_entities
                  (id, name, entity_type, description, aliases, properties, confidence, source_file, created_at, updated_at, color, hidden)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 ON CONFLICT(id) DO UPDATE SET
+                   name=excluded.name,
+                   entity_type=excluded.entity_type,
+                   description=excluded.description,
+                   aliases=excluded.aliases,
+                   properties=excluded.properties,
+                   confidence=excluded.confidence,
+                   source_file=excluded.source_file,
+                   updated_at=excluded.updated_at,
+                   color=excluded.color
+                   -- hidden NOT updated: preserves existing hidden state",
                 rusqlite::params![
                     e.id,
                     e.name,
@@ -5327,6 +5372,7 @@ impl KnowledgeService {
                     importance_level: row.get("importance_level").ok(),
                     community_id: row.get("community_id").ok(),
                     display_tier: None,
+                    inferred: row.get::<_, i32>("inferred").unwrap_or(0) != 0,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -5351,6 +5397,7 @@ impl KnowledgeService {
                     importance_level: row.get("importance_level").ok(),
                     community_id: row.get("community_id").ok(),
                     display_tier: None,
+                    inferred: row.get::<_, i32>("inferred").unwrap_or(0) != 0,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -5521,8 +5568,8 @@ impl KnowledgeService {
             "namespace": namespace.unwrap_or("general"),
             "min_shared_neighbors": min_shared_neighbors.unwrap_or(2),
         });
-        let url = format!("{}/api/inference/run", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/inference/run", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5534,32 +5581,32 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/inference/candidates?namespace={}&limit={}&status={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
             limit.unwrap_or(10),
             status.unwrap_or("pending"),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let mut json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
         Ok(json["inferences"].take())
     }
 
     pub async fn confirm_inference(&self, inference_id: &str) -> Result<serde_json::Value, String> {
-        let url = format!("{}/api/inference/{}/confirm", self.heimdall_url, inference_id);
-        let resp = self.client.post(&url).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/inference/{}/confirm", self._heimdall_url, inference_id);
+        let resp = self._client.post(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     pub async fn reject_inference(&self, inference_id: &str) -> Result<serde_json::Value, String> {
-        let url = format!("{}/api/inference/{}/reject", self.heimdall_url, inference_id);
-        let resp = self.client.post(&url).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/inference/{}/reject", self._heimdall_url, inference_id);
+        let resp = self._client.post(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     pub async fn rebuild_causal(&self, namespace: Option<&str>) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"namespace": namespace.unwrap_or("general")});
-        let url = format!("{}/api/evolution/causal/rebuild", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/causal/rebuild", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5570,11 +5617,11 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/evolution/causal/chains?namespace={}&min_score={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
             min_score.unwrap_or(0.3),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let mut json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
         Ok(json["chains"].take())
     }
@@ -5594,8 +5641,8 @@ impl KnowledgeService {
             "properties": properties,
             "namespace": namespace.unwrap_or("general"),
         });
-        let url = format!("{}/api/evolution/conflicts/check", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/conflicts/check", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5605,10 +5652,10 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/evolution/conflicts?namespace={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let mut json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
         Ok(json["conflicts"].take())
     }
@@ -5619,8 +5666,8 @@ impl KnowledgeService {
         resolution: &str,
     ) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"resolution": resolution});
-        let url = format!("{}/api/evolution/conflicts/{}/resolve", self.heimdall_url, history_id);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/conflicts/{}/resolve", self._heimdall_url, history_id);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5635,8 +5682,8 @@ impl KnowledgeService {
             "amount": amount.unwrap_or(0.1),
             "reason": reason.unwrap_or("manual_confirm"),
         });
-        let url = format!("{}/api/evolution/confidence/boost", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/confidence/boost", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5651,8 +5698,8 @@ impl KnowledgeService {
             "amount": amount.unwrap_or(0.05),
             "reason": reason.unwrap_or("marked_outdated"),
         });
-        let url = format!("{}/api/evolution/confidence/decay", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/confidence/decay", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5661,8 +5708,8 @@ impl KnowledgeService {
         namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"namespace": namespace.unwrap_or("general")});
-        let url = format!("{}/api/evolution/confidence/apply-time-decay", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/confidence/apply-time-decay", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5677,20 +5724,20 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let mut url = format!(
             "{}/api/hypothesis/gaps?namespace={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
         );
         if let Some(et) = entity_type {
             url.push_str(&format!("&entity_type={et}"));
         }
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let mut json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
         Ok(json["gaps"].take())
     }
 
     pub async fn dismiss_hypothesis(&self, hypothesis_id: &str) -> Result<serde_json::Value, String> {
-        let url = format!("{}/api/hypothesis/{}/dismiss", self.heimdall_url, hypothesis_id);
-        let resp = self.client.post(&url).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/hypothesis/{}/dismiss", self._heimdall_url, hypothesis_id);
+        let resp = self._client.post(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5698,8 +5745,8 @@ impl KnowledgeService {
         &self,
         entity_id: &str,
     ) -> Result<serde_json::Value, String> {
-        let url = format!("{}/api/evolution/viewpoint/{entity_id}", self.heimdall_url);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/viewpoint/{entity_id}", self._heimdall_url);
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
         Ok(match json.get("changes").and_then(|v| v.as_array()) {
             Some(arr) => serde_json::Value::Array(arr.clone()),
@@ -5714,11 +5761,11 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/evolution/viewpoint/drifted?namespace={}&min_changes={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
             min_changes.unwrap_or(2),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         let mut json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
         Ok(json["entities"].take())
     }
@@ -5734,11 +5781,11 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/synthesis/duplicates?namespace={}&threshold={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
             threshold.unwrap_or(0.8),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5748,8 +5795,8 @@ impl KnowledgeService {
         secondary_ids: &[String],
     ) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"primary_id": primary_id, "secondary_ids": secondary_ids});
-        let url = format!("{}/api/synthesis/merge", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/synthesis/merge", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5759,8 +5806,8 @@ impl KnowledgeService {
         reason: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"entity_id": entity_id, "reason": reason.unwrap_or("manual")});
-        let url = format!("{}/api/evolution/obsolescence/mark-outdated", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/obsolescence/mark-outdated", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5769,8 +5816,8 @@ impl KnowledgeService {
         namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"namespace": namespace.unwrap_or("general")});
-        let url = format!("{}/api/evolution/obsolescence/scan", self.heimdall_url);
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/evolution/obsolescence/scan", self._heimdall_url);
+        let resp = self._client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5784,10 +5831,10 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/tree?namespace={}",
-            self.heimdall_url,
+            self._heimdall_url,
             namespace.unwrap_or("general"),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5798,11 +5845,11 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/tree/{}/subtree?namespace={}",
-            self.heimdall_url,
+            self._heimdall_url,
             entity_id,
             namespace.unwrap_or("general"),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5813,11 +5860,11 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/tree/{}/breadcrumb?namespace={}",
-            self.heimdall_url,
+            self._heimdall_url,
             entity_id,
             namespace.unwrap_or("general"),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5828,11 +5875,11 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/tree/{}/leaves?namespace={}",
-            self.heimdall_url,
+            self._heimdall_url,
             entity_id,
             namespace.unwrap_or("general"),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5844,18 +5891,18 @@ impl KnowledgeService {
     ) -> Result<serde_json::Value, String> {
         let url = format!(
             "{}/api/tree/search?q={}&namespace={}&limit={}",
-            self.heimdall_url,
+            self._heimdall_url,
             query,
             namespace.unwrap_or("general"),
             limit.unwrap_or(20),
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
     pub async fn get_namespace_config(&self) -> Result<serde_json::Value, String> {
-        let url = format!("{}/api/namespaces/config", self.heimdall_url);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/namespaces/config", self._heimdall_url);
+        let resp = self._client.get(&url).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5872,8 +5919,8 @@ impl KnowledgeService {
         if let Some(r) = retriever_weights { body["retriever_weights"] = r.clone(); }
         if let Some(e) = entity_type_weights { body["entity_type_weights"] = e.clone(); }
         if let Some(c) = context_injection { body["context_injection"] = c.clone(); }
-        let url = format!("{}/api/namespaces/config/{namespace_name}", self.heimdall_url);
-        let resp = self.client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/namespaces/config/{namespace_name}", self._heimdall_url);
+        let resp = self._client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5883,8 +5930,8 @@ impl KnowledgeService {
         description: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({"description": description.unwrap_or("")});
-        let url = format!("{}/api/namespaces/config/{namespace_name}", self.heimdall_url);
-        let resp = self.client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let url = format!("{}/api/namespaces/config/{namespace_name}", self._heimdall_url);
+        let resp = self._client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
         resp.json().await.map_err(|e| e.to_string())
     }
 
@@ -5971,6 +6018,65 @@ impl KnowledgeService {
             rusqlite::params![entity_id],
         ).map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Cascade delete a document and all its associated entities.
+    ///
+    /// Step 1: Delete the document entity (doc:{path})
+    /// Step 2: Cascade-delete entities extracted from this document (source_file = path)
+    /// Step 3: Remove cross-document relations (edges linking other entities to deleted entities)
+    /// Step 4: Remove document-to-document relations (extends/refers/related_to/precedes)
+    /// Step 5: Delete cache_content_index entry
+    pub fn cascade_delete_document(&self, file_path: &str) -> Result<u32, String> {
+        let db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        let mut deleted = 0u32;
+
+        // Step 1: Find entities whose source_file matches this document
+        let mut entity_stmt = db
+            .prepare("SELECT id FROM cache_entities WHERE source_file = ?1")
+            .map_err(|e| e.to_string())?;
+        let linked_ids: Vec<String> = entity_stmt
+            .query_map(rusqlite::params![file_path], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Also include the document entity itself
+        let doc_id = format!("doc:{}", file_path);
+        let mut all_entity_ids = linked_ids.clone();
+        all_entity_ids.push(doc_id);
+
+        // Step 2: Delete entities (hidden=1 to preserve reference chains)
+        for eid in &all_entity_ids {
+            db.execute(
+                "UPDATE cache_entities SET hidden = 1 WHERE id = ?1",
+                rusqlite::params![eid],
+            )
+            .map_err(|e| e.to_string())?;
+            deleted += 1;
+        }
+
+        // Step 3: Hide relations involving deleted entities (cross-document edges)
+        // Only hide relations FROM/TO our deleted entities — other entities' relations stay
+        for eid in &all_entity_ids {
+            db.execute(
+                "UPDATE cache_relations SET hidden = 1 WHERE from_id = ?1 OR to_id = ?1",
+                rusqlite::params![eid],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        // Step 4: Delete cache_content_index entry
+        db.execute(
+            "DELETE FROM cache_content_index WHERE source_path = ?1",
+            rusqlite::params![file_path],
+        )
+        .map_err(|e| e.to_string())?;
+
+        log::info!(
+            "[Nexus] cascade_delete: {file_path} → {deleted} entities hidden + relations cleaned"
+        );
+        Ok(deleted)
     }
 
     /// Add a new relation between two entities.
@@ -6519,7 +6625,7 @@ impl KnowledgeService {
         let now = chrono::Utc::now().to_rfc3339();
         let task_id = uuid::Uuid::new_v4().to_string();
 
-        // Funnel filter 1: same or similar name (Levenshtein-like via LOWER equality or prefix)
+        // Find duplicate candidates: same name, any entity_type (cross-type matching)
         let mut stmt = db.prepare(
             "SELECT e1.id, e1.name, e1.entity_type, e1.description,
                     e2.id, e2.name, e2.entity_type, e2.description
@@ -6527,7 +6633,6 @@ impl KnowledgeService {
              JOIN cache_entities e2 ON e1.rowid < e2.rowid
              WHERE e1.hidden = 0 AND e2.hidden = 0
                AND LOWER(e1.name) = LOWER(e2.name)
-               AND e1.entity_type = e2.entity_type
              LIMIT 50"
         ).map_err(|e| e.to_string())?;
 
@@ -6598,15 +6703,32 @@ impl KnowledgeService {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let judgments: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap_or_default();
 
+        // Type priority for cross-type merges: higher score = keep this type
+        fn type_priority(t: &str) -> u32 {
+            match t {
+                "location" | "organization" | "person" | "natural_feature" | "time" => 3,
+                "concept" | "project" | "tool" => 2,
+                "__file__" | "document" => 1,
+                _ => 0,
+            }
+        }
+
         let mut merged = 0u32;
         let mut details = Vec::new();
         for j in &judgments {
             let idx = j["index"].as_u64().unwrap_or(0) as usize;
             if j["same"].as_bool().unwrap_or(false) && idx < pairs.len() {
-                let a_id = pairs[idx]["entity_a"]["id"].as_str().unwrap_or("");
-                let b_id = pairs[idx]["entity_b"]["id"].as_str().unwrap_or("");
+                let mut a_id = pairs[idx]["entity_a"]["id"].as_str().unwrap_or("").to_string();
+                let mut b_id = pairs[idx]["entity_b"]["id"].as_str().unwrap_or("").to_string();
                 let a_name = pairs[idx]["entity_a"]["name"].as_str().unwrap_or("");
                 let b_name = pairs[idx]["entity_b"]["name"].as_str().unwrap_or("");
+                let a_type = pairs[idx]["entity_a"]["entity_type"].as_str().unwrap_or("");
+                let b_type = pairs[idx]["entity_b"]["entity_type"].as_str().unwrap_or("");
+
+                // Higher priority type survives the merge
+                if type_priority(b_type) > type_priority(a_type) {
+                    std::mem::swap(&mut a_id, &mut b_id);
+                }
 
                 // Merge B into A: move B's relations to A, then hide B
                 let _ = db.execute(
@@ -7341,112 +7463,175 @@ impl KnowledgeService {
 
     // ── Layer 5: Transitive Reasoning ──
 
+    /// Transitive reasoning: find A→B→C paths (any relation types), call LLM to judge
+    /// whether A→C is semantically valid, then create inferred edges.
     pub fn nexus_run_transitive(&self) -> Result<crate::models::knowledge::TransitiveReport, String> {
         use crate::models::knowledge::TransitiveReport;
-        let db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        let mut db = self.cache_db.lock().map_err(|e| e.to_string())?;
         let now = chrono::Utc::now().to_rfc3339();
 
-        // ── Discover all transitive relation types in the graph ──
-        // Instead of hardcoding 4 types, scan what's actually used.
-        let mut type_stmt = db.prepare(
-            "SELECT DISTINCT relation_type FROM cache_relations"
-        ).map_err(|e| e.to_string())?;
-        let all_types: Vec<String> = type_stmt.query_map([], |row| row.get(0))
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        // Common transitive relation patterns — expand the hardcoded list
-        // with these prefixes.  e.g. is_a, subclass_of, part_of, located_in,
-        // belongs_to, contains, derived_from, depends_on, etc.
-        let transitive_prefixes = [
-            "is_a", "subclass", "part_of", "located", "belongs",
-            "contains", "derived", "depends", "requires", "implies",
-        ];
-        let transitive_types: Vec<String> = all_types.into_iter().filter(|t| {
-            transitive_prefixes.iter().any(|p| t.starts_with(p))
-        }).collect();
-        // Fallback to known types if the graph is empty or has no matches
-        let transitive_types = if transitive_types.is_empty() {
-            vec!["is_a".into(), "part_of".into(), "located_in".into(), "belongs_to".into()]
-        } else {
-            transitive_types
-        };
-
-        let mut total_scanned = 0u32;
-        let mut total_inferred = 0u32;
-        let mut skipped = 0u32;
-        let mut iterations = 0u32;
-        const MAX_ITERATIONS: u32 = 10;
-
-        // ── Transaction wrapper ──
-        db.execute("BEGIN", []).map_err(|e| e.to_string())?;
-
-        // ── Iterative transitive closure until convergence ──
-        loop {
-            iterations += 1;
-            let mut round_inferred = 0u32;
-
-            for ttype in &transitive_types {
-                // Find 2-hop paths: A → B → C where both edges share the same transitive type.
-                // Include newly-inferred edges from previous iterations so multi-hop chains
-                // (A → B → C → D) eventually close to A → D.
-                let mut stmt = db.prepare(
-                    "SELECT r1.from_id, r2.to_id, r1.relation_type, MIN(r1.weight, r2.weight)
-                     FROM cache_relations r1
-                     JOIN cache_relations r2 ON r1.to_id = r2.from_id AND r1.relation_type = r2.relation_type
-                     WHERE r1.relation_type = ?1
-                       AND r1.from_id != r2.to_id"
-                ).map_err(|e| e.to_string())?;
-
-                let candidates: Vec<(String, String, String, f64)> = stmt.query_map(
-                    rusqlite::params![ttype],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, f64>(3)?))
-                ).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
-
-                total_scanned += candidates.len() as u32;
-
-                for (from_id, to_id, rel_type, weight) in &candidates {
-                    // Skip if any edge already exists (original or previously inferred)
-                    let exists: bool = db.query_row(
-                        "SELECT COUNT(*) > 0 FROM cache_relations WHERE from_id = ?1 AND to_id = ?2 AND relation_type = ?3",
-                        rusqlite::params![from_id, to_id, rel_type],
-                        |r| r.get(0),
-                    ).unwrap_or(false);
-
-                    if exists {
-                        skipped += 1;
-                        continue;
-                    }
-
-                    // Inferred edges get lower confidence — capped at 0.5
-                    let confidence = (weight * 0.9).min(0.5);
-                    let new_id = uuid::Uuid::new_v4().to_string();
-                    let _ = db.execute(
-                        "INSERT INTO cache_relations (id, from_id, to_id, relation_type, weight, bidirectional, inferred, source_type) VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 'inferred')",
-                        rusqlite::params![new_id, from_id, to_id, rel_type, confidence],
-                    );
-                    total_inferred += 1;
-                    round_inferred += 1;
-                }
-            }
-
-            if round_inferred == 0 || iterations >= MAX_ITERATIONS {
-                break;
-            }
+        // Check LLM API key
+        let env_vars = self.nexus_env_vars();
+        if !Self::has_api_key(&env_vars) {
+            return Err("未配置 LLM API Key，传递推理需要大模型判断".into());
         }
 
-        // ── Commit ──
-        db.execute("COMMIT", []).map_err(|e| e.to_string())?;
+        // Step 1: Find all 2-hop paths A→B→C (any types), skip if A→C already exists
+        let mut stmt = db.prepare(
+            "SELECT r1.from_id, e1.name, e1.entity_type, e1.description,
+                    r1.via_id, e2.name, e2.entity_type, e2.description,
+                    r2.to_id, e3.name, e3.entity_type, e3.description,
+                    r1.relation_type, r1.weight,
+                    r2.relation_type, r2.weight
+             FROM (
+                 SELECT r.from_id, r.to_id AS via_id, r.relation_type, r.weight
+                 FROM cache_relations r WHERE r.hidden = 0
+             ) r1
+             JOIN (
+                 SELECT r.from_id AS via_id, r.to_id, r.relation_type, r.weight
+                 FROM cache_relations r WHERE r.hidden = 0
+             ) r2 ON r1.via_id = r2.via_id
+             JOIN cache_entities e1 ON e1.id = r1.from_id
+             JOIN cache_entities e2 ON e2.id = r1.via_id
+             JOIN cache_entities e3 ON e3.id = r2.to_id
+             WHERE r1.from_id != r2.to_id
+               AND e1.hidden = 0 AND e2.hidden = 0 AND e3.hidden = 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM cache_relations r3
+                   WHERE r3.from_id = r1.from_id AND r3.to_id = r2.to_id AND r3.hidden = 0
+               )
+             LIMIT 100"
+        ).map_err(|e| e.to_string())?;
 
-        // Log to synthesis_log
+        let total_scanned: u32;
+        let mut total_inferred = 0u32;
+        let mut llm_calls = 0u32;
+
+        let candidates: Vec<serde_json::Value> = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "from": {
+                    "name": row.get::<_, String>(1)?,
+                    "type": row.get::<_, String>(2)?,
+                    "desc": row.get::<_, String>(3).unwrap_or_default(),
+                },
+                "via": {
+                    "name": row.get::<_, String>(5)?,
+                    "type": row.get::<_, String>(6)?,
+                    "desc": row.get::<_, String>(7).unwrap_or_default(),
+                },
+                "to": {
+                    "name": row.get::<_, String>(9)?,
+                    "type": row.get::<_, String>(10)?,
+                    "desc": row.get::<_, String>(11).unwrap_or_default(),
+                },
+                "rel1": row.get::<_, String>(12)?,
+                "rel1_weight": row.get::<_, f64>(13)?,
+                "rel2": row.get::<_, String>(14)?,
+                "rel2_weight": row.get::<_, f64>(15)?,
+                "to_exists": true,
+                "from_id": row.get::<_, String>(0)?,
+                "to_id": row.get::<_, String>(8)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        total_scanned = candidates.len() as u32;
+        drop(stmt);
+        // Release DB lock before long-running LLM call
+        drop(db);
+
+        if total_scanned == 0 {
+            return Ok(TransitiveReport { scanned: 0, inferred: 0, skipped_existing: 0 });
+        }
+
+        // Step 2: Call LLM via transitive_infer.py
+        let json_input = serde_json::to_string(&candidates).unwrap_or_default();
+        let py_path = Self::python_script_path("transitive_infer.py");
+
+        let mut cmd = std::process::Command::new("python");
+        cmd.arg(&py_path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        for (k, v) in &env_vars {
+            cmd.env(k, v);
+        }
+
+        let mut child = cmd.spawn().map_err(|e| format!("启动 transitive_infer.py 失败: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(json_input.as_bytes());
+        }
+        let output = child.wait_with_output().map_err(|e| format!("等待推理脚本失败: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("传递推理脚本异常: {}", stderr));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let results: Vec<serde_json::Value> = serde_json::from_str(&stdout)
+            .map_err(|e| format!("解析推理结果失败: {} — raw: {}", e, &stdout[..stdout.len().min(200)]))?;
+
+        llm_calls = ((total_scanned + 7) / 8) as u32; // batch size = 8
+
+        // Step 3: Create inferred edges for valid paths
+        db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        let now2 = chrono::Utc::now().to_rfc3339();
+
+        for item in &results {
+            let idx = item.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            if idx >= candidates.len() { continue; }
+
+            let valid = item.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !valid { continue; }
+
+            let candidate = &candidates[idx];
+            let from_id = candidate["from_id"].as_str().unwrap_or("");
+            let to_id = candidate["to_id"].as_str().unwrap_or("");
+            if from_id.is_empty() || to_id.is_empty() { continue; }
+            let rel_type = item.get("relation_type").and_then(|v| v.as_str()).unwrap_or("related_to");
+            let confidence = item.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.3).min(0.5);
+
+            // Check if LLM wants to create a new inferred entity
+            if let Some(new_ent) = item.get("new_entity") {
+                let ne_name = new_ent.get("name").and_then(|v| v.as_str()).unwrap_or("推断实体");
+                let ne_type = new_ent.get("entity_type").and_then(|v| v.as_str()).unwrap_or("concept");
+                let ne_desc = new_ent.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                let ne_conf = new_ent.get("confidence").and_then(|v| v.as_f64()).unwrap_or(confidence);
+                let new_id = uuid::Uuid::new_v5(&WIKI_NAMESPACE, format!("inferred:{}", ne_name).as_bytes()).to_string();
+                let _ = db.execute(
+                    "INSERT OR IGNORE INTO cache_entities (id, name, entity_type, description, confidence, llm_confidence, source_file, namespace, inferred, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?5, NULL, '推断', 1, ?6, ?6)",
+                    rusqlite::params![new_id, ne_name, ne_type, ne_desc, ne_conf, now2],
+                );
+                let edge_id = uuid::Uuid::new_v4().to_string();
+                let _ = db.execute(
+                    "INSERT OR IGNORE INTO cache_relations (id, from_id, to_id, relation_type, weight, bidirectional, inferred, source_type) VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 'inferred')",
+                    rusqlite::params![edge_id, from_id, new_id, rel_type, confidence],
+                );
+                total_inferred += 1;
+                continue;
+            }
+
+            let edge_id = uuid::Uuid::new_v4().to_string();
+            let _ = db.execute(
+                "INSERT OR IGNORE INTO cache_relations (id, from_id, to_id, relation_type, weight, bidirectional, inferred, source_type) VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 'inferred')",
+                rusqlite::params![edge_id, from_id, to_id, rel_type, confidence],
+            );
+            total_inferred += 1;
+        }
+
+        // Log
         let task_id = uuid::Uuid::new_v4().to_string();
         let _ = db.execute(
-            "INSERT INTO cache_synthesis_log (id, task, rule, started_at, completed_at, edges_created, entities_scanned, status) VALUES (?1, 'transitive', 'transitive_closure', ?2, ?2, ?3, ?4, 'completed')",
-            rusqlite::params![task_id, now, total_inferred, total_scanned],
+            "INSERT INTO cache_synthesis_log (id, task, rule, started_at, completed_at, edges_created, entities_scanned, llm_calls, status) VALUES (?1, 'transitive', 'llm_transitive', ?2, ?3, ?4, ?5, ?6, 'completed')",
+            rusqlite::params![task_id, now, now2, total_inferred, total_scanned, llm_calls],
         );
 
-        Ok(TransitiveReport { scanned: total_scanned, inferred: total_inferred, skipped_existing: skipped })
+        Ok(TransitiveReport { scanned: total_scanned, inferred: total_inferred, skipped_existing: 0 })
     }
 
     // ── Layer 5: Conflict Detection ──
@@ -7649,5 +7834,102 @@ impl KnowledgeService {
         );
 
         Ok(VerifyReport { total_edges: total, verified, rejected, batches, llm_calls: batches })
+    }
+
+    /// Clear the extraction cache so all files will be re-extracted on next scan.
+    pub fn clear_extraction_cache(&self) -> Result<(), String> {
+        let db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        db.execute("DELETE FROM cache_content_index", [])
+            .map_err(|e| format!("Failed to clear content index: {e}"))?;
+        log::info!("[Nexus] Extraction cache cleared — all files will be re-extracted");
+        Ok(())
+    }
+
+    /// Reset the knowledge graph: keep __file__ document entities, delete all others.
+    /// Clears relations and extraction cache. Returns counts for reporting.
+    /// After calling this, run nexus_reindex_all to re-extract entities from all wiki files.
+    pub fn reset_knowledge_graph(&self) -> Result<serde_json::Value, String> {
+        let db = self.cache_db.lock().map_err(|e| e.to_string())?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Step 1: Count what will be deleted
+        let entity_total: i64 = db
+            .query_row("SELECT COUNT(*) FROM cache_entities", [], |r| r.get(0))
+            .unwrap_or(0);
+        let file_entities: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM cache_entities WHERE entity_type = '__file__'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let relation_total: i64 = db
+            .query_row("SELECT COUNT(*) FROM cache_relations", [], |r| r.get(0))
+            .unwrap_or(0);
+        let content_index_total: i64 = db
+            .query_row("SELECT COUNT(*) FROM cache_content_index", [], |r| r.get(0))
+            .unwrap_or(0);
+
+        // Step 2: Delete all tables with FK references to cache_entities FIRST
+        db.execute("DELETE FROM cache_relations", [])
+            .map_err(|e| format!("Failed to delete old relations: {e}"))?;
+
+        db.execute("DELETE FROM cache_entity_snapshots", [])
+            .map_err(|e| format!("Failed to clear snapshots: {e}"))?;
+
+        db.execute("DELETE FROM cache_synthesis", [])
+            .map_err(|e| format!("Failed to clear synthesis: {e}"))?;
+
+        db.execute("DELETE FROM cache_pending_merge", [])
+            .map_err(|e| format!("Failed to clear pending merges: {e}"))?;
+
+        db.execute("DELETE FROM cache_extraction_feedback", [])
+            .map_err(|e| format!("Failed to clear feedback: {e}"))?;
+
+        db.execute("DELETE FROM cache_ontology", [])
+            .map_err(|e| format!("Failed to clear ontology: {e}"))?;
+
+        // Step 3: Delete non-document entities (keep __file__ and document types)
+        db.execute(
+            "DELETE FROM cache_entities WHERE entity_type NOT IN ('__file__', 'document')",
+            [],
+        )
+        .map_err(|e| format!("Failed to delete old entities: {e}"))?;
+        let deleted_entities = entity_total - file_entities;
+
+        // Note: cache_entities_fts is a contentless FTS5 table — DELETE triggers on
+        // cache_entities handle the sync automatically. No explicit FTS cleanup needed.
+
+        // Step 6: Clear extraction cache to force re-extraction
+        db.execute("DELETE FROM cache_content_index", [])
+            .map_err(|e| format!("Failed to clear content index: {e}"))?;
+
+        // Step 7: Clear entity scores
+        db.execute("DELETE FROM cache_entity_scores", [])
+            .map_err(|e| format!("Failed to clear entity scores: {e}"))?;
+
+        // Step 7: Clear synthesis log (old inference records)
+        db.execute("DELETE FROM cache_synthesis_log WHERE task != 'reset'", [])
+            .map_err(|e| format!("Failed to clear synthesis log: {e}"))?;
+
+        // Step 8: Log the reset event
+        let log_id = uuid::Uuid::new_v4().to_string();
+        db.execute(
+            "INSERT INTO cache_synthesis_log (id, task, started_at, completed_at, status, summary) VALUES (?1, 'reset', ?2, ?2, 'completed', ?3)",
+            rusqlite::params![log_id, now, format!("Deleted {deleted_entities} entities, {relation_total} relations, {content_index_total} content index entries. Kept {file_entities} document entities.")],
+        ).ok();
+
+        log::info!(
+            "[Nexus] Reset: deleted {deleted_entities} entities, {relation_total} relations. Kept {file_entities} document nodes."
+        );
+
+        Ok(serde_json::json!({
+            "ok": true,
+            "deleted_entities": deleted_entities,
+            "deleted_relations": relation_total,
+            "cleared_content_index": content_index_total,
+            "kept_document_entities": file_entities,
+            "next_step": "Run nexus_reindex_all to re-extract from wiki files"
+        }))
     }
 }

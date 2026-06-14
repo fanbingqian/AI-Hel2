@@ -57,11 +57,19 @@ pub async fn create_wiki_item(
 
 #[tauri::command]
 pub async fn delete_wiki_item(
-    state: State<'_, WikiState>,
+    wiki_state: State<'_, WikiState>,
+    knowledge_state: State<'_, crate::commands::knowledge::KnowledgeState>,
     path: String,
 ) -> Result<(), String> {
-    let service = state.service.lock().map_err(|e| e.to_string())?;
-    service.delete_file(&path, false).map_err(|e| e.to_string())
+    {
+        // Step 1: Delete file (sync lock — drop before async work)
+        let service = wiki_state.service.lock().map_err(|e| e.to_string())?;
+        service.delete_file(&path, false).map_err(|e| e.to_string())?;
+    }
+    // Step 2: Cascade-delete knowledge graph entities (async lock)
+    let ks = knowledge_state.service.lock().await;
+    let _ = ks.cascade_delete_document(&path);
+    Ok(())
 }
 
 #[tauri::command]

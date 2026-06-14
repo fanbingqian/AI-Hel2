@@ -247,18 +247,6 @@ export function voiceDiagnose(): Promise<string> {
   return invoke("voice_diagnose");
 }
 
-export function voiceStartListening(): Promise<void> {
-  return invoke("voice_start_listening");
-}
-
-export function voiceStopListening(): Promise<string> {
-  return invoke("voice_stop_listening");
-}
-
-export function voiceListenOnce(): Promise<string> {
-  return invoke("voice_listen_once");
-}
-
 // ── Files ──
 
 export function readTextFile(path: string): Promise<string> {
@@ -410,6 +398,16 @@ export function nexusGetMaintenanceStatus(): Promise<MaintenanceStatus> {
   return invoke("nexus_get_maintenance_status");
 }
 
+export function nexusReindexForce(): Promise<{
+  files_processed: number;
+  entities_total: number;
+  relations_total: number;
+  skipped: number;
+  errors: string[];
+}> {
+  return invoke("nexus_reindex_force");
+}
+
 // ── Layer 2-6 Extended Maintenance ──
 
 export interface PageRankReport {
@@ -509,6 +507,17 @@ export function nexusScanConflicts(): Promise<ConflictReport> {
 
 export function nexusGetEvolution(entityId: string): Promise<EvolutionReport> {
   return invoke("nexus_get_evolution", { entityId });
+}
+
+export function nexusResetGraph(): Promise<{
+  ok: boolean;
+  deleted_entities: number;
+  deleted_relations: number;
+  cleared_content_index: number;
+  kept_document_entities: number;
+  next_step: string;
+}> {
+  return invoke("nexus_reset_graph");
 }
 
 export function nexusVerifySynthesis(): Promise<VerifyReport> {

@@ -123,7 +123,7 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
           search_query: st.graphSettings2D.searchQuery || null,
           type_filter: st.entityTypeFilter,
           namespace_filter: st.namespaceFilter,
-          min_importance: st.graphSettings2D.minImportance > 0 ? st.graphSettings2D.minImportance : null,
+          min_importance: null,
           show_orphans: st.showOrphans,
         });
       } else {
@@ -165,8 +165,10 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
   },
 
   loadInferences: async (_namespace) => {
-    // Inference service pending Nexus migration — skip dead Heimdall :8765 endpoint
-    set({ inferences: [] });
+    try {
+      const data = await getInferences(null, 200, "pending");
+      set({ inferences: Array.isArray(data) ? data : [] });
+    } catch { set({ inferences: [] }); }
   },
 
   setShowInferenceEdges: (show) => set({ showInferenceEdges: show }),
@@ -298,17 +300,13 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
         set({
           graphSettings2D: {
             searchQuery: (twoD.searchQuery as string) ?? DEFAULT_GRAPH_SETTINGS_2D.searchQuery,
-            showTags: (twoD.showTags as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showTags,
-            showAttachments: (twoD.showAttachments as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showAttachments,
             showOrphans: (twoD.showOrphans as boolean) ?? true,
             showFiles: (twoD.showFiles as boolean) ?? true,
-            minDegree: (twoD.minDegree as number) ?? DEFAULT_GRAPH_SETTINGS_2D.minDegree,
-            minImportance: (twoD.minImportance as number) ?? DEFAULT_GRAPH_SETTINGS_2D.minImportance,
             typeFilter: (twoD.typeFilter as string[]) ?? DEFAULT_GRAPH_SETTINGS_2D.typeFilter,
             communityMode: (twoD.communityMode as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.communityMode,
-            useWebGL: (twoD.useWebGL as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.useWebGL,
-            explorationDepth: (twoD.explorationDepth as number) ?? DEFAULT_GRAPH_SETTINGS_2D.explorationDepth,
+            inferredCreatable: (twoD.inferredCreatable as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.inferredCreatable,
             colorGroups: (twoD.colorGroups as GraphSettings2D["colorGroups"]) ?? DEFAULT_GRAPH_SETTINGS_2D.colorGroups,
+            typeColors: (twoD.typeColors as Record<string, string>) ?? DEFAULT_GRAPH_SETTINGS_2D.typeColors,
             showArrows: (twoD.showArrows as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showArrows,
             showTypeRing: (twoD.showTypeRing as boolean) ?? DEFAULT_GRAPH_SETTINGS_2D.showTypeRing,
             textOpacity: (twoD.textOpacity as number) ?? DEFAULT_GRAPH_SETTINGS_2D.textOpacity,

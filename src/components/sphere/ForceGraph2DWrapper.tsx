@@ -21,11 +21,19 @@ function typeColor(t: string) {
   return typeColorCache.get(k)!;
 }
 
-const EDGE_COLOR = "#9999aa";
-const EDGE_HOVER = "#b0a0d0";
-const EDGE_DIM = "rgba(153,153,170,0.06)";
+const EDGE_COLOR = "#c8c8d8";
+const EDGE_HOVER = "#d0c8e8";
+const EDGE_DIM = "rgba(200,200,216,0.06)";
 const SEL_RING = "#E91E63";
 const HOVER_RING = "#3498db";
+
+const TYPE_LABELS_ZH: Record<string, string> = {
+  __file__: "文档", document: "文档",
+  location: "地名", organization: "组织", person: "人物",
+  natural_feature: "自然景观", time: "时间",
+  concept: "概念", project: "项目", tool: "工具",
+  inferred: "推断(灰)", community: "社区",
+};
 
 export function ForceGraph2DWrapper() {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -40,6 +48,10 @@ export function ForceGraph2DWrapper() {
   const [detailNode, setDetailNode] = useState<any>(null);
   const [showLegend, setShowLegend] = useState(true);
   const simReadyRef = useRef(false);
+  // Persist node positions across data changes so graph doesn't "disappear"
+  const posCache = useRef<Map<string, { x: number; y: number; radius: number }>>(new Map());
+  // Auto-fit: zoom to show all nodes on first convergence
+  const hasAutoFitRef = useRef(false);
 
   // Resize observer
   useEffect(() => {
@@ -66,36 +78,60 @@ export function ForceGraph2DWrapper() {
   const { nodes, links } = useMemo(() => {
     const gd = buildGraphData(entities, relations, inferences, {
       focusedNodeId: null,
-      focusDepth: graphSettings.explorationDepth ?? 2,
+      focusDepth: 2,
       showOrphans,
       showFiles: true,
       showInferenceEdges: true,
       nodeRelSize: graphSettings.nodeSize ?? 1,
       searchQuery: graphSettings.searchQuery || "",
-      minDegree: graphSettings.minDegree ?? 0,
-      minImportance: graphSettings.minImportance ?? 0,
       typeFilter: graphSettings.typeFilter || [],
       colorGroups: graphSettings.colorGroups || [],
+      typeColors: graphSettings.typeColors || {},
     });
-    const ns = gd.nodes.map((n) => ({
+    let ns = gd.nodes.map((n) => ({
       ...n,
-      _color: n.entityType && n.entityType !== "unknown" ? typeColor(n.entityType) : "#8b95a3",
+      _color: n.color, // use color from graphAdapter (white-gray for files, gray for inferred, typed for others)
     }));
+
+    // ── Document-fold mode (方案: "社区折叠") ──
+    // ON  = show only document nodes + document-to-document edges
+    // OFF = show all nodes (documents + entities + relations)
+    if (graphSettings.communityMode) {
+      const docIds = new Set<string>();
+      const docNodes = ns.filter(n => {
+        const et = (n._entity as any)?.entity_type || n.entityType || "";
+        const isDoc = et === "__file__" || et === "document";
+        if (isDoc) docIds.add(n.id);
+        return isDoc;
+      });
+      // Keep edges where both ends are document nodes
+      const docLinks = [...gd.links, ...gd.infLinks].filter(l => {
+        const sid = typeof l.source === "string" ? l.source : (l.source as any)?.id || "";
+        const tid = typeof l.target === "string" ? l.target : (l.target as any)?.id || "";
+        return docIds.has(sid) && docIds.has(tid);
+      });
+      return { nodes: docNodes, links: docLinks as FGLink[] };
+    }
+
     return { nodes: ns, links: [...gd.links, ...gd.infLinks] as FGLink[] };
   }, [entities, relations, inferences, graphSettings, showOrphans]);
 
   // Data key for re-simulation
   const dataKey = useMemo(() => `${nodes.length}-${links.length}`, [nodes.length, links.length]);
+  // Reset auto-fit when graph data changes
+  useEffect(() => { hasAutoFitRef.current = false; }, [dataKey]);
 
-  // Legend
+  // Legend — use actual rendered node colors, not typeColor()
   const legend = useMemo(() => {
     const m = new Map<string, { c: string; n: number }>();
-    for (const e of entities) {
-      const c = typeColor(e.entity_type);
-      const v = m.get(e.entity_type) || { c, n: 0 }; v.n++; m.set(e.entity_type, v);
+    for (const n of nodes) {
+      const et = n.entityType || (n._entity as any)?.entity_type || "unknown";
+      const color = n._color || n.color || "#8b95a3";
+      const entry = m.get(et);
+      if (entry) { entry.n++; } else { m.set(et, { c: color, n: 1 }); }
     }
     return [...m].sort((a, b) => b[1].n - a[1].n).map(([t, v]) => ({ type: t, ...v }));
-  }, [entities]);
+  }, [nodes]);
 
   // ── Physics simulation + render loop ──
   useEffect(() => {
@@ -103,13 +139,16 @@ export function ForceGraph2DWrapper() {
     const W = dims.w, H = dims.h;
     if (W < 10 || H < 10 || nodes.length === 0) return;
 
+    // Save current zoom/pan before clearing
+    const savedTransform = transformRef.current;
+
     // Setup SVG
     svg.selectAll("*").remove();
     svg.attr("viewBox", [0, 0, W, H]);
 
     const gRoot = svg.append("g");
 
-    // Zoom behavior (D3 handles SVG transform, we handle pan/scale)
+    // Zoom behavior
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([1 / 128, 8])
       .on("zoom", (e) => {
@@ -118,35 +157,57 @@ export function ForceGraph2DWrapper() {
       });
     svg.call(zoomBehavior);
 
-    // Create simulation (hand-written physics)
+    // Restore saved zoom/pan so viewport stays the same
+    if (savedTransform.k !== 1 || savedTransform.x !== 0 || savedTransform.y !== 0) {
+      const t = d3.zoomIdentity.translate(savedTransform.x, savedTransform.y).scale(savedTransform.k);
+      svg.call(zoomBehavior.transform, t);
+    }
+
+    // Create simulation (Obsidian-style physics)
     const s = graphSettings;
     const nodeIds = nodes.map((n) => n.id);
-    const edgeArray: [string, string][] = links.map((l) => [l.source as string, l.target as string]);
-    const prevNodes = simReadyRef.current ? simRef.current?.nodes : undefined;
+    // Pass edge weights so springs can use weight-dependent distance
+    const edgeArray: [string, string, number][] = links.map((l) => [
+      l.source as string, l.target as string, (l.weight ?? 0.5),
+    ]);
+    // Use position cache to preserve node positions across settings changes
+    const prevNodes = posCache.current.size > 0 ? posCache.current : undefined;
 
+    // Obsidian 参数映射:
+    //   centerForce (0-1)    → centerStrength  (直接)
+    //   repelForce  (0-20)   → repelBase       (三次方: e³)
+    //   attractForce(0-1)    → linkStrength    (直接)
+    //   linkLength  (30-500) → linkDistance    (直接)
     simRef.current = createSimulation(nodeIds, edgeArray, {
-      centering: (s.centerForce ?? 0.5) * 0.05,
-      repulsion: 100 * (s.repelForce ?? 10),
-      attraction: 1.0 * (s.attractForce ?? 0.5),
+      centerStrength: s.centerForce ?? 0.1,
+      repelBase: Math.pow(s.repelForce ?? 10, 3),
+      linkStrength: s.attractForce ?? 1.0,
       linkDistance: s.linkLength ?? 250,
-      dragForce: s.dragForce || 8,
-      alphaDecay: 0.04,
+      dragBoost: s.dragForce ?? 4,
     }, W, H, prevNodes);
     simReadyRef.current = true;
 
-    // Set node radii
+    // Set node radii by degree (Obsidian: hub nodes are larger)
     const sim = simRef.current!;
     for (const n of nodes) {
       const sn = sim.nodes.get(n.id);
-      if (sn) sn.radius = 12;
+      if (sn) sn.radius = 5 + Math.min(n.degree || 0, 20) * 0.6;
     }
+
+    // Arrow marker definition
+    svg.append("defs").append("marker")
+      .attr("id", "arrowhead").attr("viewBox", "0 0 6 4")
+      .attr("refX", 6).attr("refY", 2).attr("markerWidth", 4).attr("markerHeight", 3)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M 0 0 L 6 2 L 0 4 Z").attr("fill", EDGE_COLOR);
 
     // ── SVG elements ──
     const linkG = gRoot.append("g").attr("class", "links");
     const linkEl = linkG.selectAll("path").data(links).join("path")
       .attr("stroke", EDGE_COLOR)
-      .attr("stroke-width", (s.linkThickness ?? 1.25) * 0.4)
-      .attr("opacity", s.edgeOpacity ?? 0.6)
+      .attr("marker-end", s.showArrows ? "url(#arrowhead)" : null)
+      .attr("stroke-width", (s.linkThickness ?? 1.0) / Math.max(transformRef.current.k, 0.125))
+      .attr("opacity", s.edgeOpacity ?? 0.2)
       .attr("fill", "none");
 
     // Type rings (colored border behind node, shows entity type)
@@ -168,8 +229,8 @@ export function ForceGraph2DWrapper() {
 
     const lblG = gRoot.append("g").attr("class", "labels");
     const lblEl = lblG.selectAll("text").data(nodes).join("text")
-      .attr("fill", "#aaa").attr("font-size", 5).attr("text-anchor", "middle")
-      .text((d: any) => d.name.length > 12 ? d.name.slice(0, 11) + "…" : d.name);
+      .attr("fill", "#aaa").attr("font-size", 11).attr("text-anchor", "middle")
+      .text((d: any) => d.name);
 
     // ── Drag (only activates after 3px movement, click doesn't restart sim) ──
     const dragState = { active: false, sx: 0, sy: 0 };
@@ -222,7 +283,20 @@ export function ForceGraph2DWrapper() {
       linkEl.attr("stroke", EDGE_COLOR);
       lblEl.attr("opacity", 1);
     });
-    nodeEl.on("click", (e, d) => { selectEntity(d.id); setDetailNode(d); });
+    nodeEl.on("click", (e, d) => {
+      // Inferred entity + toggle ON → offer to create document
+      if (d.isInferred && graphSettings.inferredCreatable) {
+        if (confirm(`为推断实体「${d.name}」创建文档？`)) {
+          // Create a markdown file in wiki/ for this entity
+          const name = d.name.replace(/[<>:"/\\|?*]/g, "_");
+          import("../../services/api").then(({ writeWikiFile }) => {
+            writeWikiFile(`${name}.md`, `# ${d.name}\n\n> 推断实体，通过传递推理生成。\n\n## 描述\n\n${(d._entity as any)?.description || ""}\n`);
+          }).catch(() => {});
+        }
+        return;
+      }
+      selectEntity(d.id); setDetailNode(d);
+    });
     svg.on("click", (e) => {
       if (e.target === svgRef.current) { selectEntity(""); setDetailNode(null); }
     });
@@ -242,13 +316,46 @@ export function ForceGraph2DWrapper() {
         .attr("cy", (d: any) => sim.nodes.get(d.id)?.y ?? 0);
       nodeEl.attr("cx", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
         .attr("cy", (d: any) => sim.nodes.get(d.id)?.y ?? 0);
+      // Obsidian: label above node with zoom-based fade
+      const zoom = transformRef.current.k;
+      const textAlpha = Math.max(0, Math.min(1, Math.log2(zoom) + 1 - (1 - (graphSettings.textOpacity ?? 0.85))));
       lblEl.attr("x", (d: any) => sim.nodes.get(d.id)?.x ?? 0)
-        .attr("y", (d: any) => (sim.nodes.get(d.id)?.y ?? 0) + 10);
+        .attr("y", (d: any) => {
+          const y = sim.nodes.get(d.id)?.y ?? 0;
+          const r = Math.max(5, (d._sphereRadius || 5) * 1.4) * (graphSettings.nodeSize || 0.5);
+          return y - r - 4;  // above node edge, 4px gap
+        })
+        .attr("opacity", textAlpha);
       linkEl.attr("d", (d: any) => {
         const s = sim.nodes.get(d.source as string);
         const t = sim.nodes.get(d.target as string);
         return s && t ? `M${s.x},${s.y}L${t.x},${t.y}` : "";
       });
+
+      // Save positions to cache when frozen (survives settings/data changes)
+      if (sim.frozen && !dragIdRef.current) {
+        const cache = posCache.current;
+        cache.clear();
+        for (const [id, n] of sim.nodes) {
+          cache.set(id, { x: n.x, y: n.y, radius: n.radius });
+        }
+        // Auto-fit: zoom to show all nodes on first convergence
+        if (!hasAutoFitRef.current && sim.nodes.size > 0) {
+          hasAutoFitRef.current = true;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const n of sim.nodes.values()) {
+            if (n.x < minX) minX = n.x; if (n.y < minY) minY = n.y;
+            if (n.x > maxX) maxX = n.x; if (n.y > maxY) maxY = n.y;
+          }
+          const bw = maxX - minX || 1, bh = maxY - minY || 1;
+          const pad = 60;
+          const scale = Math.min(W / (bw + pad * 2), H / (bh + pad * 2), 4);
+          const tx = (W - bw * scale) / 2 - minX * scale;
+          const ty = (H - bh * scale) / 2 - minY * scale;
+          const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+          svg.transition().duration(400).call(zoomBehavior.transform, t);
+        }
+      }
 
       animFrameRef.current = requestAnimationFrame(draw);
     };
@@ -259,19 +366,30 @@ export function ForceGraph2DWrapper() {
     };
   }, [dataKey, dims]);
 
-  // ── Update physics config live (no re-simulation) ──
+  // ── Update physics config live (no re-simulation, no alpha reset) ──
   useEffect(() => {
     const sim = simRef.current;
     if (!sim) return;
     const s = graphSettings;
-    sim.config.centering = (s.centerForce ?? 0.5) * 0.05;
-    sim.config.repulsion = 100 * (s.repelForce ?? 10);
-    sim.config.attraction = 1.0 * (s.attractForce ?? 0.5);
+    const prevCenter = sim.config.centerStrength;
+    const prevRepel = sim.config.repelBase;
+    const prevLinkDist = sim.config.linkDistance;
+    const prevLinkStr = sim.config.linkStrength;
+    sim.config.centerStrength = s.centerForce ?? 0.1;
+    sim.config.repelBase = Math.pow(s.repelForce ?? 10, 3);
+    sim.config.linkStrength = s.attractForce ?? 1.0;
     sim.config.linkDistance = s.linkLength ?? 250;
-    sim.config.dragForce = s.dragForce || 8;
-    sim.alpha = 1.0;
-    sim.frozen = false;
-    sim.convergenceFrames = 0;
+    sim.config.dragBoost = s.dragForce ?? 4;
+    const changed =
+      sim.config.centerStrength !== prevCenter ||
+      sim.config.repelBase !== prevRepel ||
+      sim.config.linkDistance !== prevLinkDist ||
+      sim.config.linkStrength !== prevLinkStr;
+    if (changed && sim.frozen) {
+      sim.alpha = 0.3;
+      sim.frozen = false;
+      sim.convergenceFrames = 0;
+    }
   }, [graphSettings]);
 
   // ── Visual settings live update ──
@@ -289,14 +407,29 @@ export function ForceGraph2DWrapper() {
       svg.selectAll(".rings circle").attr("opacity", s.showTypeRing ? 0.5 : 0);
     }
     if (prev.linkThickness !== s.linkThickness) {
-      svg.selectAll(".links path").attr("stroke-width", (s.linkThickness ?? 1.25) * 0.4);
+      const zoom = transformRef.current.k;
+      svg.selectAll(".links path").attr("stroke-width", (s.linkThickness ?? 1.0) / Math.max(zoom, 0.125));
     }
-    if (prev.textOpacity !== s.textOpacity) {
-      svg.selectAll(".labels text").attr("opacity", s.textOpacity ?? 0.85);
+    if (prev.typeColors !== s.typeColors) {
+      // Rebuild graph data and apply new colors to existing SVG nodes
+      const gd = buildGraphData(entities, relations, inferences, {
+        focusedNodeId: null, focusDepth: 2, showOrphans,
+        showFiles: true, showInferenceEdges: true,
+        nodeRelSize: s.nodeSize ?? 1, searchQuery: s.searchQuery || "",
+        typeFilter: s.typeFilter || [], colorGroups: s.colorGroups || [],
+        typeColors: s.typeColors || {},
+      });
+      const colorMap = new Map(gd.nodes.map(n => [n.id, n.color]));
+      svg.selectAll(".nodes circle").attr("fill", (d: any) => colorMap.get(d.id) ?? d._color ?? "#8b95a3");
+      svg.selectAll(".rings circle").attr("stroke", (d: any) => colorMap.get(d.id) ?? d._color ?? "#8b95a3");
     }
     if (prev.edgeOpacity !== s.edgeOpacity) {
-      svg.selectAll(".links path").attr("opacity", s.edgeOpacity ?? 0.6);
+      svg.selectAll(".links path").attr("opacity", s.edgeOpacity ?? 0.2);
     }
+    if (prev.showArrows !== s.showArrows) {
+      svg.selectAll(".links path").attr("marker-end", s.showArrows ? "url(#arrowhead)" : null);
+    }
+    // textOpacity handled in render loop via zoom-based fade (Obsidian formula)
   }, [graphSettings]);
 
   // Selected ring update
@@ -344,13 +477,14 @@ export function ForceGraph2DWrapper() {
             <span style={{ fontWeight: 600, fontSize: 12 }}>图例</span>
             <button onClick={() => setShowLegend(false)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 14 }}>×</button>
           </div>
-          {legend.map((t) => (
-            <div key={t.type} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+          {legend.map((t) => {
+            const zh = TYPE_LABELS_ZH[t.type] || t.type;
+            return <div key={t.type} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
               <span style={{ width: 10, height: 10, borderRadius: "50%", background: t.c, flexShrink: 0 }} />
-              <span style={{ flex: 1 }}>{t.type}</span>
+              <span style={{ flex: 1 }}>{zh} <span style={{ color: "#555", fontSize: 10 }}>{t.type}</span></span>
               <span style={{ color: "#666", fontSize: 10 }}>{t.n}</span>
-            </div>
-          ))}
+            </div>;
+          })}
         </div>
       )}
       {!showLegend && (

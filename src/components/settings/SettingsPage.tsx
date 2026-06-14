@@ -945,8 +945,23 @@ function NexusSection() {
     setRunningTask(task);
     setTaskResult(null);
     try {
-      const result = await invoke(cmd, args ?? {});
-      setTaskResult(result);
+      // Group A: Health check = quality + fix_migrated (chained)
+      if (task === "health_check") {
+        const qResult = await invoke("nexus_maintain_quality");
+        const fResult = await invoke("nexus_maintain_fix_migrated");
+        setTaskResult({
+          task: "health_check",
+          status: "completed",
+          summary: `质量评分: ${(qResult as any).summary || "完成"} | 修复迁移: ${(fResult as any).summary || "完成"}`,
+          details: [
+            ...((qResult as any)?.details || []).map((d: any) => ({ ...d, source: "quality" })),
+            ...((fResult as any)?.details || []).map((d: any) => ({ ...d, source: "fix_migrated" })),
+          ],
+        });
+      } else {
+        const result = await invoke(cmd, args ?? {});
+        setTaskResult(result);
+      }
       await refreshMaintenanceStatus();
     } catch (e: any) {
       setTaskResult({ error: String(e) });
@@ -1021,44 +1036,68 @@ function NexusSection() {
       <div className={styles.dividerSm}>
         <div className={styles.label} style={{ marginBottom: 4 }}>维护操作</div>
         <div className={styles.desc} style={{ marginBottom: 14 }}>
-          质量评分和清理使用纯规则，不消耗 token。去重检查和边验证需调用 LLM。
+          A-C 涉及 LLM 调用会消耗 token。D/F 纯规则/算法，不消耗 token。
+        </div>
+
+        {/* ── Reset Graph (admin tool) ── */}
+        <div style={{
+          marginBottom: 14, padding: "10px 12px", borderRadius: 6,
+          background: "rgba(250,81,81,0.06)", border: "1px solid rgba(250,81,81,0.15)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <span style={{ fontSize: 12, color: "#fa5151", fontWeight: 500 }}>⚠ 重置知识图谱</span>
+              <div style={{ fontSize: 11, color: "#808080", marginTop: 2 }}>
+                删除所有旧实体和关系（保留文档节点），清除提取缓存。执行后需运行「全量归类」重新提取。
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirm("确定要删除所有旧实体和关系吗？\n\n文档节点（__file__）将被保留。\n执行后需要重新提取所有文档。")) return;
+                setRunningTask("reset");
+                setTaskResult(null);
+                try {
+                  const { nexusResetGraph } = await import("../../services/api");
+                  const result = await nexusResetGraph();
+                  setTaskResult({ task: "reset", summary: `已删除 ${(result as any).deleted_entities} 个实体、${(result as any).deleted_relations} 条关系。保留了 ${(result as any).kept_document_entities} 个文档节点。` });
+                  await refreshMaintenanceStatus();
+                } catch (e: any) { setTaskResult({ error: String(e) }); }
+                setRunningTask(null);
+              }}
+              disabled={runningTask !== null}
+              style={{
+                padding: "4px 12px", fontSize: 11, cursor: "pointer", borderRadius: 4,
+                border: "1px solid rgba(250,81,81,0.4)", background: "transparent", color: "#fa5151",
+                opacity: runningTask ? 0.5 : 1,
+              }}
+            >
+              {runningTask === "reset" ? "重置中..." : "重置图谱"}
+            </button>
+          </div>
         </div>
 
         <MaintGroup
-          layer="Layer 2 · 质量维护"
+          layer="A · 知识库健康检查"
           color="#1a7a3a"
           items={[
             {
-              task: "quality", cmd: "nexus_maintain_quality",
-              label: "质量评分",
-              desc: "基于规则评估实体完整性、关系密度和置信度，标记低质量实体。纯规则，不消耗 token。",
+              task: "health_check", cmd: "nexus_maintain_quality",
+              label: "运行检查",
+              desc: "实体分级评分（A/B/C/D）+ 类型引号清理 + 修复迁移数据格式。纯 SQL 规则，不消耗 token。",
             },
-            {
-              task: "cleanup", cmd: "nexus_maintain_cleanup",
-              label: "孤岛+过期清理",
-              desc: "清除无关系的孤岛实体和长期未更新的过期数据，保持知识库整洁。纯规则。",
-            },
+          ]}
+          {...maintProps}
+        />
+
+        <MaintGroup
+          layer="B · 实体去重与合并"
+          color="#2a5a1a"
+          items={[
             {
               task: "dedup", cmd: "nexus_maintain_dedup",
-              label: "去重检查",
-              desc: "通过 LLM 比对名称/类型相近的实体对，识别疑似重复并生成合并建议。需调用 LLM。",
-              llm: true,
-            },
-            {
-              task: "fix_migrated", cmd: "nexus_maintain_fix_migrated",
-              label: "修复迁移数据",
-              desc: "修复从旧版升级时遗留的数据格式问题（JSON 字段、路径分隔符等）。纯规则。",
-            },
-            {
-              task: "classify", cmd: "nexus_maintain_classify", args: { fullScan: false },
-              label: "文档归类(增量)",
-              desc: "对 wiki 根目录下未归类的文档进行 LLM 分类并移入类型文件夹。仅扫描根层级。",
-              llm: true,
-            },
-            {
-              task: "classify_full", cmd: "nexus_maintain_classify", args: { fullScan: true },
-              label: "文档归类(全量)",
-              desc: "遍历整个 wiki 目录树，对所有非 md 文件进行 LLM 分类并归入对应文件夹。深度扫描。",
+              label: "运行去重",
+              desc: "Blocking 预分块 → LLM 批量判断重复（跨类型语义匹配）→ confidence≥0.95 自动合并，0.85-0.95 标记 SAME_AS 审核。需调用 LLM。",
               llm: true,
             },
           ]}
@@ -1066,49 +1105,85 @@ function NexusSection() {
         />
 
         <MaintGroup
-          layer="Layer 4 · 图智能分析"
+          layer="C · 文档归类"
+          color="#1a5a3a"
+          items={[
+            {
+              task: "classify", cmd: "nexus_maintain_classify", args: { fullScan: false },
+              label: "增量归类",
+              desc: "扫描 wiki 根目录未分类文件 → LLM 建议文件夹 → 自动移动文件。最多 20 个文件/次。需调用 LLM。",
+              llm: true,
+            },
+            {
+              task: "classify_full", cmd: "nexus_maintain_classify", args: { fullScan: true },
+              label: "全量归类",
+              desc: "遍历整个 wiki 目录树，对所有文件进行 LLM 分类并归入对应文件夹。深度扫描。需调用 LLM。",
+              llm: true,
+            },
+          ]}
+          {...maintProps}
+        />
+
+        <MaintGroup
+          layer="文档实体提取"
+          color="#3a6a3a"
+          items={[
+            {
+              task: "reindex_force", cmd: "nexus_reindex_force",
+              label: "强制重新提取",
+              desc: "清除提取缓存，对所有 wiki 文档用当前 LLM 配置重新提取实体和关系。不清除旧数据，仅在旧实体上追加/更新。需调用 LLM，文档越多耗时越长。",
+              llm: true,
+            },
+          ]}
+          {...maintProps}
+        />
+
+        <MaintGroup
+          layer="D · 图谱结构分析"
           color="#2B5A2B"
           items={[
             {
               task: "pagerank", cmd: "nexus_run_pagerank",
               label: "PageRank",
-              desc: "迭代替换计算每个实体的重要性得分，阻尼系数 0.85，发现知识图谱核心节点。纯算法。",
+              desc: "d=0.85 迭代替换计算每个实体的重要性得分，分别计算文档级和实体级。纯算法，不消耗 token。",
             },
             {
               task: "community", cmd: "nexus_run_community",
               label: "社区检测",
-              desc: "使用 Louvain 贪婪算法检测知识图谱中的社区结构，发现紧密关联的实体群组。纯算法。",
+              desc: "Louvain 贪婪算法检测知识图谱中的社区结构，结果用于图谱社区折叠视图。纯算法，不消耗 token。",
             },
           ]}
           {...maintProps}
         />
 
         <MaintGroup
-          layer="Layer 5 · 知识演进"
+          layer="E · 关系推导与验证"
           color="#3A2A5A"
           items={[
             {
               task: "transitive", cmd: "nexus_run_transitive",
               label: "传递推理",
-              desc: "基于规则引擎推导传递关系（is_a / part_of / located_in / belongs_to），补全隐式知识链。纯规则。",
+              desc: "扫描全部 A→B→C 路径（不限关系类型）→ LLM 判断 A→C 是否合理并确定关系类型和置信度 → 创建推断边（inferred=1）。最多处理 100 条候选路径。需调用 LLM。",
+              llm: true,
             },
             {
-              task: "conflicts", cmd: "nexus_scan_conflicts",
-              label: "冲突扫描",
-              desc: "扫描图中互斥的关系对（如同一实体同时被 leads_to 和 blocks），标记逻辑冲突。纯规则。",
+              task: "verify", cmd: "nexus_verify_synthesis",
+              label: "验证合成边",
+              desc: "对 inferred=1 的推断边分批提交 LLM 验证其合理性，确认保留/拒绝删除，保证图谱准确度。需调用 LLM。",
+              llm: true,
             },
           ]}
           {...maintProps}
         />
 
         <MaintGroup
-          layer="Layer 6 · 推理验证"
+          layer="F · 冲突与矛盾检测"
           color="#5A3A2A"
           items={[
             {
-              task: "verify", cmd: "nexus_verify_synthesis",
-              label: "验证合成边",
-              desc: "将推断出的关系边分批提交 LLM 验证其合理性，拒绝错误推断以提升图谱准确度。需调用 LLM。",
+              task: "conflicts", cmd: "nexus_scan_conflicts",
+              label: "扫描冲突",
+              desc: "检查预定义互斥对→SQL自连接→BFS检测有向环→LLM审核语义矛盾。阶段1+2纯规则，阶段3需调用LLM。",
               llm: true,
             },
           ]}
