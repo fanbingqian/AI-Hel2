@@ -7,10 +7,11 @@ count = 0
 for root, dirs, files in os.walk(src):
     for f in files:
         fp = os.path.join(root, f)
+        arcname = os.path.relpath(fp, src)  # relative path inside zip
         try:
-            zf.write(fp, fp)
+            zf.write(fp, arcname)
             count += 1
         except Exception as e:
-            print(f"SKIP: {fp} - {e}", file=sys.stderr)
+            print(f"SKIP: {arcname} - {e}", file=sys.stderr)
 zf.close()
 print(f"Created {dst} with {count} files")
