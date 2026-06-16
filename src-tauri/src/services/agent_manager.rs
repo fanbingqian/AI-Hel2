@@ -226,19 +226,11 @@ impl AgentManager {
     }
 
     /// Detect the Python executable path.
-    /// Priority: extracted hermes_home → app_dir → system python
+    /// Priority: embedded python → bundled venv → hermes_home venv → system python
     fn python_path(&self) -> PathBuf {
         let scripts = if cfg!(windows) { "Scripts" } else { "bin" };
 
-        // Priority 0: Extracted in hermes_home (from extract_agent_zip)
-        let home_agent = self.hermes_home.join("hermes-agent");
-        let home_python = home_agent.join("python").join("python.exe");
-        if home_python.exists() {
-            log::info!("Using hermes_home Python: {}", home_python.display());
-            return home_python;
-        }
-
-        // Priority 1: App directory (bundled by NSIS)
+        // Priority 0: Embedded portable Python (no venv, no paths — truly portable)
         if let Some(app_dir) = self.app_dir() {
             let embedded = app_dir.join("hermes-agent").join("python").join("python.exe");
             if embedded.exists() {

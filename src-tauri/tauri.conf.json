@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build && powershell -Command \"Compress-Archive -Path src-tauri\\hermes-agent\\* -DestinationPath src-tauri\\hermes-agent.zip -Force\" && powershell -File src-tauri\\copy-agent.ps1"
+    "beforeBuildCommand": "npm run build && python src-tauri\\zip-agent.py && powershell -File src-tauri\\copy-agent.ps1"
   },
   "app": {
     "windows": [
