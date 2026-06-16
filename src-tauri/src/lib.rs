@@ -30,58 +30,6 @@ use tokio::sync::mpsc;
 
 pub use errors::AppError;
 
-/// Recursively migrate .md files from old to new wiki directory.
-/// Skips noise directories: _auto, _trash, and nested heimdall/wiki/ duplicates.
-fn migrate_wiki_files(old: &Path, new: &Path, moved: &mut u32) -> Result<(), String> {
-    for entry in std::fs::read_dir(old).map_err(|e| format!("read_dir: {e}"))? {
-        let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
-        let src = entry.path();
-        let fname = src.file_name().unwrap().to_string_lossy();
-        if src.is_dir() {
-            // Skip noise and duplicate directories
-            if fname == "_auto" || fname == "_trash" || fname == "heimdall" {
-                continue;
-            }
-            let sub_new = new.join(fname.as_ref());
-            std::fs::create_dir_all(&sub_new)
-                .map_err(|e| format!("create_dir {:?}: {e}", sub_new))?;
-            migrate_wiki_files(&src, &sub_new, moved)?;
-        } else if src.extension().and_then(|e| e.to_str()) == Some("md") {
-            let dest = new.join(fname.as_ref());
-            // Skip if destination already exists (dedup)
-            if dest.exists() {
-                continue;
-            }
-            std::fs::rename(&src, &dest)
-                .map_err(|e| format!("rename {:?}: {e}", src))?;
-            *moved += 1;
-        }
-    }
-    Ok(())
-}
-
-/// Resolve the legacy Hermes Agent home directory (~/.hermes).
-fn dirs_hermes_home_legacy() -> PathBuf {
-    std::env::var("HERMES_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            #[cfg(target_os = "windows")]
-            {
-                std::env::var("USERPROFILE")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("C:"))
-                    .join(".hermes")
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                std::env::var("HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("/tmp"))
-                    .join(".hermes")
-            }
-        })
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config_service = ConfigService::new();
@@ -115,32 +63,6 @@ pub fn run() {
 
     // Start Nexus HTTP API server (for Python Agent tool access)
     services::nexus_api::start(knowledge_service.clone(), &hermes_home);
-
-    // Migrate old heimdall/wiki/ .md files to new wiki/ path (one-time)
-    // Sources: own hermes_home/heimdall/wiki/ AND legacy ~/.hermes/heimdall/wiki/
-    let new_wiki = hermes_home.join("wiki");
-    std::fs::create_dir_all(&new_wiki).ok();
-    let mut total_moved = 0u32;
-
-    let own_old = hermes_home.join("heimdall").join("wiki");
-    for old_wiki in [own_old, dirs_hermes_home_legacy().join("heimdall").join("wiki")].iter() {
-        if old_wiki.exists() {
-            let mut moved = 0u32;
-            match migrate_wiki_files(&old_wiki, &new_wiki, &mut moved) {
-                Ok(()) => {
-                    total_moved += moved;
-                    // Only remove if this is the own directory (not the legacy Hermes one)
-                    if old_wiki.starts_with(&hermes_home) {
-                        let _ = std::fs::remove_dir_all(&old_wiki);
-                    }
-                }
-                Err(e) => log::warn!("Wiki migration from {:?}: {e}", old_wiki),
-            }
-        }
-    }
-    if total_moved > 0 {
-        log::info!("Wiki migration: {} .md files imported to {:?}", total_moved, new_wiki);
-    }
 
     // File watcher for wiki directory (Arc-held — accessible for event loop + KnowledgeState)
     let wiki_dir = hermes_home.join("wiki");

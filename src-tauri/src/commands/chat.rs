@@ -62,29 +62,13 @@ fn emit_sse_event(
     if let Some(event) = HermesAgentService::parse_sse_line(data, event_type) {
         match event {
             SSEChatEvent::Delta { content, reasoning_content } => {
-                // Defend against providers that send cumulative delta.content
-                // instead of incremental tokens. Only emit the newly-added suffix.
-                let raw = &content;
-                if raw == accumulated.as_str() {
-                    // Exact duplicate — skip entirely
-                    log::info!("[emit_sse] delta raw={:?} SKIP duplicate", raw);
-                } else if raw.starts_with(accumulated.as_str()) {
-                    let incremental = raw[accumulated.len()..].to_string();
-                    if !incremental.is_empty() || reasoning_content.is_some() {
-                        log::info!("[emit_sse] delta raw={:?} incremental={:?}", raw, incremental);
-                        accumulated.push_str(&incremental);
-                        let _ = app.emit("chat:delta", StreamDelta { content: incremental, reasoning_content });
-                    }
-                } else {
-                    // Non-cumulative or provider reset — emit full content
-                    if !accumulated.is_empty() {
-                        accumulated.clear();
-                    }
-                    log::info!("[emit_sse] delta raw={:?} (full, non-cumulative)", raw);
-                    if !raw.is_empty() || reasoning_content.is_some() {
-                        accumulated.push_str(raw);
-                        let _ = app.emit("chat:delta", StreamDelta { content: content, reasoning_content });
-                    }
+                // v0.15 Agent sends standard OpenAI incremental deltas.
+                // Just accumulate for the done event and emit directly.
+                if !content.is_empty() {
+                    accumulated.push_str(&content);
+                }
+                if !content.is_empty() || reasoning_content.is_some() {
+                    let _ = app.emit("chat:delta", StreamDelta { content, reasoning_content });
                 }
             }
             SSEChatEvent::Done { usage, session_id } => {
