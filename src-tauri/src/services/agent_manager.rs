@@ -130,22 +130,35 @@ impl AgentManager {
         }
 
         // Last resort: try to extract from bundled ZIP
-        // Check both resource dir AND exe dir for the ZIP
-        let zip_dirs: Vec<PathBuf> = {
+        // Use Tauri's resource resolver to find hermes-agent.zip
+        let zip_candidates: Vec<PathBuf> = {
             let mut dirs = Vec::new();
-            dirs.push(exe_dir.to_path_buf()); // D:\ where exe lives
+            // 1. Try resource_dir (Tauri's official resource location)
             if let Some(rd) = self.resource_dir.lock().ok().and_then(|r| r.clone()) {
-                dirs.push(rd); // C:\Users\...\AppData\Local\...
+                dirs.push(rd);
             }
+            // 2. Try exe directory (NSIS places resources next to exe)
+            dirs.push(exe_dir.to_path_buf());
             dirs
         };
-        for zip_dir in &zip_dirs {
+        for zip_dir in &zip_candidates {
+            log::info!("[AgentManager] Looking for hermes-agent.zip in {}", zip_dir.display());
             if let Some(dir) = self.extract_agent_zip(zip_dir) {
                 return Some(dir);
             }
         }
 
-        log::error!("[AgentManager] hermes-agent NOT FOUND in any candidate directory");
+        // Last resort: try Tauri's resolve API for the resource path
+        let zip_path = std::env::current_exe().ok()
+            .and_then(|p| p.parent().map(|d| d.join("hermes-agent.zip")));
+        if let Some(ref zp) = zip_path {
+            if let Some(dir) = self.extract_agent_zip(zp.parent().unwrap_or(std::path::Path::new("."))) {
+                return Some(dir);
+            }
+        }
+
+        log::error!("[AgentManager] hermes-agent.zip NOT FOUND in any candidate directory");
+        log::error!("[AgentManager] Candidates: {:?}", zip_candidates);
         None
     }
 
@@ -213,11 +226,19 @@ impl AgentManager {
     }
 
     /// Detect the Python executable path.
-    /// Priority: embedded python → bundled venv → hermes_home venv → system python
+    /// Priority: extracted hermes_home → app_dir → system python
     fn python_path(&self) -> PathBuf {
         let scripts = if cfg!(windows) { "Scripts" } else { "bin" };
 
-        // Priority 0: Embedded portable Python (no venv, no paths — truly portable)
+        // Priority 0: Extracted in hermes_home (from extract_agent_zip)
+        let home_agent = self.hermes_home.join("hermes-agent");
+        let home_python = home_agent.join("python").join("python.exe");
+        if home_python.exists() {
+            log::info!("Using hermes_home Python: {}", home_python.display());
+            return home_python;
+        }
+
+        // Priority 1: App directory (bundled by NSIS)
         if let Some(app_dir) = self.app_dir() {
             let embedded = app_dir.join("hermes-agent").join("python").join("python.exe");
             if embedded.exists() {
