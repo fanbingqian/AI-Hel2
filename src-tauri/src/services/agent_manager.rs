@@ -309,6 +309,7 @@ impl AgentManager {
         log::info!("Spawning Agent with Python: {}", python.display());
 
         let mut cmd = Command::new(&python);
+        cmd.arg("-u"); // unbuffered stdout/stderr — errors visible immediately
         // Use absolute script path to bypass Python module import issues
         if let Some(script) = self.find_agent_script() {
             let script_path = script.to_string_lossy().trim_start_matches("\\\\?\\").to_string();
@@ -347,9 +348,8 @@ impl AgentManager {
             }
         }
 
-        // HERMES_HOME: use user's Hermes Agent home (~/.hermes), separate from AI-Hel2 data
-        let hermes_home = dirs_home().join(".hermes");
-        cmd.env("HERMES_HOME", hermes_home.to_str().unwrap_or("."));
+        // HERMES_HOME: same as AI-Hel2 data dir so agent finds config.yaml and plugins
+        cmd.env("HERMES_HOME", self.hermes_home.to_str().unwrap_or("."));
         // Allow open access on localhost (no user auth required)
         cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
 
