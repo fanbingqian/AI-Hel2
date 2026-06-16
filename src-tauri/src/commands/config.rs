@@ -55,7 +55,16 @@ pub async fn update_api_key(
     if !new_content.ends_with('\n') { new_content.push('\n'); }
     new_content.push_str(&format!("{}={}\n", env_key, api_key.trim()));
     let _ = fs::create_dir_all(service.hermes_home());
-    fs::write(&env_path, &new_content).map_err(|e| format!("写入 .env 失败: {e}"))
+    fs::write(&env_path, &new_content).map_err(|e| format!("写入 .env 失败: {e}"))?;
+
+    // Also seed the agent's ~/.hermes/.env so the Python Agent can find the API key
+    let agent_home = crate::services::config_service::dirs_home().join(".hermes");
+    let _ = fs::create_dir_all(&agent_home);
+    let agent_env = agent_home.join(".env");
+    fs::write(&agent_env, &new_content).map_err(|e| format!("写入 Agent .env 失败: {e}"))?;
+    log::info!("API key written to {} and {}", env_path.display(), agent_env.display());
+
+    Ok(())
 }
 
 #[tauri::command]

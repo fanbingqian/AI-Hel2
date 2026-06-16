@@ -256,7 +256,7 @@ fn dirs_ai_hel2_home() -> PathBuf {
         })
 }
 
-fn dirs_home() -> PathBuf {
+pub fn dirs_home() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         std::env::var("USERPROFILE")

@@ -348,8 +348,10 @@ impl AgentManager {
             }
         }
 
-        // HERMES_HOME: same as AI-Hel2 data dir so agent finds config.yaml and plugins
-        cmd.env("HERMES_HOME", self.hermes_home.to_str().unwrap_or("."));
+        // HERMES_HOME: Agent uses its own directory (~/.hermes), separate from AI-Hel2 data.
+        // AI-Hel2 seeds the initial config there on first API setup.
+        let agent_home = dirs_home().join(".hermes");
+        cmd.env("HERMES_HOME", agent_home.to_str().unwrap_or("."));
         // Allow open access on localhost (no user auth required)
         cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
 
