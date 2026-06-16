@@ -23,3 +23,15 @@ if (Test-Path $src) {
 } else {
     Write-Warning "hermes-agent source not found at $src"
 }
+
+# Also copy hermes-agent.zip to the NSIS/release root (parent of $dst)
+$zipSrc = "$PSScriptRoot\hermes-agent.zip"
+if (Test-Path $zipSrc) {
+    foreach ($dst in $targets) {
+        $parent = Split-Path $dst -Parent
+        Copy-Item $zipSrc $parent -Force
+        Write-Output "Copied hermes-agent.zip to $parent"
+    }
+} else {
+    Write-Warning "hermes-agent.zip not found at $zipSrc"
+}
