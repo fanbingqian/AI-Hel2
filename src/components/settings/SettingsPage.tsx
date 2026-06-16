@@ -1100,6 +1100,11 @@ function NexusSection() {
               desc: "Blocking 预分块 → LLM 批量判断重复（跨类型语义匹配）→ confidence≥0.95 自动合并，0.85-0.95 标记 SAME_AS 审核。需调用 LLM。",
               llm: true,
             },
+            {
+              task: "analyze_types", cmd: "nexus_analyze_types",
+              label: "类型分析",
+              desc: "扫描所有实体类型，发现语义相似的类型变体（如 'concept'→'概念'），生成标准化建议。纯统计，不消耗 token。",
+            },
           ]}
           {...maintProps}
         />
@@ -1171,6 +1176,11 @@ function NexusSection() {
               label: "验证合成边",
               desc: "对 inferred=1 的推断边分批提交 LLM 验证其合理性，确认保留/拒绝删除，保证图谱准确度。需调用 LLM。",
               llm: true,
+            },
+            {
+              task: "synthesis", cmd: "nexus_run_synthesis",
+              label: "知识合成",
+              desc: "基于共享邻居和共现关系推断语义关联，生成新的 inferred=1 关系边。纯规则引擎，不消耗 token。",
             },
           ]}
           {...maintProps}
