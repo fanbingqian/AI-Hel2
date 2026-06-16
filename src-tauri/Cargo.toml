@@ -1,6 +1,6 @@
 [package]
 name = "ai-hel2"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-Hel2 — 3D Knowledge Sphere Desktop Assistant"
 authors = ["AI-Hel2 Team"]
 edition = "2021"
