@@ -57,23 +57,12 @@ pub async fn update_api_key(
     let _ = fs::create_dir_all(service.hermes_home());
     fs::write(&env_path, &new_content).map_err(|e| format!("写入 .env 失败: {e}"))?;
 
-    // Also seed the agent's ~/.hermes/ directory so the Agent can start
+    // Also seed the agent's ~/.hermes/.env so the Python Agent can find the API key
     let agent_home = crate::services::config_service::dirs_home().join(".hermes");
     let _ = fs::create_dir_all(&agent_home);
-
-    // Write .env with API key
     let agent_env = agent_home.join(".env");
     fs::write(&agent_env, &new_content).map_err(|e| format!("写入 Agent .env 失败: {e}"))?;
-
-    // Seed minimal config.yaml so the agent knows provider + model
-    let agent_config = agent_home.join("config.yaml");
-    if !agent_config.exists() {
-        let default_config = format!(
-            "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    base_url: \"https://api.deepseek.com\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n"
-        );
-        fs::write(&agent_config, &default_config).map_err(|e| format!("写入 Agent config.yaml 失败: {e}"))?;
-    }
-    log::info!("Agent config seeded at {}", agent_home.display());
+    log::info!("API key written to {} and {}", env_path.display(), agent_env.display());
 
     Ok(())
 }

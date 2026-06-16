@@ -130,35 +130,22 @@ impl AgentManager {
         }
 
         // Last resort: try to extract from bundled ZIP
-        // Use Tauri's resource resolver to find hermes-agent.zip
-        let zip_candidates: Vec<PathBuf> = {
+        // Check both resource dir AND exe dir for the ZIP
+        let zip_dirs: Vec<PathBuf> = {
             let mut dirs = Vec::new();
-            // 1. Try resource_dir (Tauri's official resource location)
+            dirs.push(exe_dir.to_path_buf()); // D:\ where exe lives
             if let Some(rd) = self.resource_dir.lock().ok().and_then(|r| r.clone()) {
-                dirs.push(rd);
+                dirs.push(rd); // C:\Users\...\AppData\Local\...
             }
-            // 2. Try exe directory (NSIS places resources next to exe)
-            dirs.push(exe_dir.to_path_buf());
             dirs
         };
-        for zip_dir in &zip_candidates {
-            log::info!("[AgentManager] Looking for hermes-agent.zip in {}", zip_dir.display());
+        for zip_dir in &zip_dirs {
             if let Some(dir) = self.extract_agent_zip(zip_dir) {
                 return Some(dir);
             }
         }
 
-        // Last resort: try Tauri's resolve API for the resource path
-        let zip_path = std::env::current_exe().ok()
-            .and_then(|p| p.parent().map(|d| d.join("hermes-agent.zip")));
-        if let Some(ref zp) = zip_path {
-            if let Some(dir) = self.extract_agent_zip(zp.parent().unwrap_or(std::path::Path::new("."))) {
-                return Some(dir);
-            }
-        }
-
-        log::error!("[AgentManager] hermes-agent.zip NOT FOUND in any candidate directory");
-        log::error!("[AgentManager] Candidates: {:?}", zip_candidates);
+        log::error!("[AgentManager] hermes-agent NOT FOUND in any candidate directory");
         None
     }
 
@@ -362,15 +349,8 @@ impl AgentManager {
         }
 
         // HERMES_HOME: Agent uses its own directory (~/.hermes), separate from AI-Hel2 data.
+        // AI-Hel2 seeds the initial config there on first API setup.
         let agent_home = dirs_home().join(".hermes");
-        // Seed minimal config on first run so agent knows provider + model
-        let _ = std::fs::create_dir_all(&agent_home);
-        let agent_config = agent_home.join("config.yaml");
-        if !agent_config.exists() {
-            let default_config = "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    base_url: \"https://api.deepseek.com\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n";
-            let _ = std::fs::write(&agent_config, default_config);
-            log::info!("Seeded default agent config at {}", agent_config.display());
-        }
         cmd.env("HERMES_HOME", agent_home.to_str().unwrap_or("."));
         // Allow open access on localhost (no user auth required)
         cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
@@ -386,26 +366,14 @@ impl AgentManager {
         cmd.env("HERMES_INFERENCE_MODEL", "deepseek-v4-flash");
         cmd.env("API_SERVER_MODEL_NAME", "deepseek-v4-flash");
 
-        // Git Bash required by agent tools (terminal, write_file, search_files)
+        // Force Git Bash over WSL bash on Windows
         #[cfg(windows)]
         {
-            let mut git_bash = String::new();
-            // 1. Bundled bash (shipped with installer)
-            if let Some(ref app_dir) = self.app_dir() {
-                let bundled = app_dir.join("hermes-agent").join("bash").join("bash.exe");
-                if bundled.exists() { git_bash = bundled.to_string_lossy().to_string(); }
-            }
-            // 2. System Git for Windows
-            if git_bash.is_empty() {
-                git_bash = std::env::var("ProgramFiles")
-                    .map(|pf| format!("{pf}\\Git\\bin\\bash.exe"))
-                    .unwrap_or_else(|_| r"C:\Program Files\Git\bin\bash.exe".to_string());
-            }
+            let git_bash = std::env::var("ProgramFiles")
+                .map(|pf| format!("{pf}\\Git\\bin\\bash.exe"))
+                .unwrap_or_else(|_| r"C:\Program Files\Git\bin\bash.exe".to_string());
             if std::path::Path::new(&git_bash).exists() {
                 cmd.env("HERMES_GIT_BASH_PATH", &git_bash);
-                log::info!("Git Bash: {}", git_bash);
-            } else {
-                log::warn!("Git Bash not found. Agent terminal/file tools will fail. Install Git for Windows from https://git-scm.com/download/win");
             }
         }
 
