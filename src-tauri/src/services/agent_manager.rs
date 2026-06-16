@@ -354,7 +354,7 @@ impl AgentManager {
         let _ = std::fs::create_dir_all(&agent_home);
         let agent_config = agent_home.join("config.yaml");
         if !agent_config.exists() {
-            let default_config = "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    api_base: \"https://api.deepseek.com\"\n    api_type: \"openai\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n";
+            let default_config = "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    base_url: \"https://api.deepseek.com\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n";
             let _ = std::fs::write(&agent_config, default_config);
             log::info!("Seeded default agent config at {}", agent_config.display());
         }
@@ -373,14 +373,26 @@ impl AgentManager {
         cmd.env("HERMES_INFERENCE_MODEL", "deepseek-v4-flash");
         cmd.env("API_SERVER_MODEL_NAME", "deepseek-v4-flash");
 
-        // Force Git Bash over WSL bash on Windows
+        // Git Bash required by agent tools (terminal, write_file, search_files)
         #[cfg(windows)]
         {
-            let git_bash = std::env::var("ProgramFiles")
-                .map(|pf| format!("{pf}\\Git\\bin\\bash.exe"))
-                .unwrap_or_else(|_| r"C:\Program Files\Git\bin\bash.exe".to_string());
+            let mut git_bash = String::new();
+            // 1. Bundled bash (shipped with installer)
+            if let Some(ref app_dir) = self.app_dir() {
+                let bundled = app_dir.join("hermes-agent").join("bash").join("bash.exe");
+                if bundled.exists() { git_bash = bundled.to_string_lossy().to_string(); }
+            }
+            // 2. System Git for Windows
+            if git_bash.is_empty() {
+                git_bash = std::env::var("ProgramFiles")
+                    .map(|pf| format!("{pf}\\Git\\bin\\bash.exe"))
+                    .unwrap_or_else(|_| r"C:\Program Files\Git\bin\bash.exe".to_string());
+            }
             if std::path::Path::new(&git_bash).exists() {
                 cmd.env("HERMES_GIT_BASH_PATH", &git_bash);
+                log::info!("Git Bash: {}", git_bash);
+            } else {
+                log::warn!("Git Bash not found. Agent terminal/file tools will fail. Install Git for Windows from https://git-scm.com/download/win");
             }
         }
 

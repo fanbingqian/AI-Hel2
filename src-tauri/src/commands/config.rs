@@ -69,7 +69,7 @@ pub async fn update_api_key(
     let agent_config = agent_home.join("config.yaml");
     if !agent_config.exists() {
         let default_config = format!(
-            "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    api_base: \"https://api.deepseek.com\"\n    api_type: \"openai\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n"
+            "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    base_url: \"https://api.deepseek.com\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n"
         );
         fs::write(&agent_config, &default_config).map_err(|e| format!("写入 Agent config.yaml 失败: {e}"))?;
     }
