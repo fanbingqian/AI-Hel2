@@ -349,8 +349,15 @@ impl AgentManager {
         }
 
         // HERMES_HOME: Agent uses its own directory (~/.hermes), separate from AI-Hel2 data.
-        // AI-Hel2 seeds the initial config there on first API setup.
         let agent_home = dirs_home().join(".hermes");
+        // Seed minimal config on first run so agent knows provider + model
+        let _ = std::fs::create_dir_all(&agent_home);
+        let agent_config = agent_home.join("config.yaml");
+        if !agent_config.exists() {
+            let default_config = "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    api_base: \"https://api.deepseek.com\"\n    api_type: \"openai\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\n";
+            let _ = std::fs::write(&agent_config, default_config);
+            log::info!("Seeded default agent config at {}", agent_config.display());
+        }
         cmd.env("HERMES_HOME", agent_home.to_str().unwrap_or("."));
         // Allow open access on localhost (no user auth required)
         cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
