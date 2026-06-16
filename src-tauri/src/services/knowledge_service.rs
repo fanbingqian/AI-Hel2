@@ -6055,7 +6055,7 @@ impl KnowledgeService {
         // Spawn maintain_dedup.py for LLM judgment
         let json_input = serde_json::to_string(&pairs).unwrap_or_default();
         let env_vars = self.nexus_env_vars();
-        let py_path = Self::python_script_path("maintain_dedup.py");
+        let py_path = self.python_script_path("maintain_dedup.py");
 
         let mut cmd = std::process::Command::new("python");
         cmd.arg(&py_path)
@@ -6227,11 +6227,25 @@ impl KnowledgeService {
     }
 
     /// Get the path to a Python script in the services directory.
-    fn python_script_path(name: &str) -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("services")
-            .join(name)
+    /// Resolve the path to a bundled Python script at runtime.
+    /// Priority: hermes_home extraction target → exe-relative → compile-time (dev).
+    fn python_script_path(&self, name: &str) -> std::path::PathBuf {
+        // 1. Extracted in hermes_home (production install)
+        let p = self.hermes_home.join("hermes-agent").join("scripts").join(name);
+        if p.exists() { return p; }
+        // 2. Next to exe (dev / NSIS)
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let p = dir.join("hermes-agent").join("scripts").join(name);
+                if p.exists() { return p; }
+            }
+        }
+        // 3. Compile-time (dev fallback)
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src").join("services").join(name);
+        if p.exists() { return p; }
+        // 4. Source tree relative (dev)
+        p
     }
 
     // ── Layer 2: Classification Fix & Document Organizing ──
@@ -6928,7 +6942,7 @@ impl KnowledgeService {
 
         // Step 2: Call LLM via transitive_infer.py
         let json_input = serde_json::to_string(&candidates).unwrap_or_default();
-        let py_path = Self::python_script_path("transitive_infer.py");
+        let py_path = self.python_script_path("transitive_infer.py");
 
         let mut cmd = std::process::Command::new("python");
         cmd.arg(&py_path)
@@ -7161,7 +7175,7 @@ impl KnowledgeService {
             return Err("未配置 LLM API Key，无法验证合成边".into());
         }
 
-        let py_path = Self::python_script_path("verify_edges.py");
+        let py_path = self.python_script_path("verify_edges.py");
         let json_input = serde_json::to_string(&edges_json).unwrap_or_default();
 
         let mut cmd = std::process::Command::new("python");

@@ -83,6 +83,30 @@ impl AgentManager {
         *rd = Some(dir);
     }
 
+    /// Install the aihel plugin to ~/.hermes/plugins/ on first run.
+    fn install_aihel_plugin(&self) {
+        let agent_home = dirs_home().join(".hermes");
+        let target = agent_home.join("plugins").join("aihel");
+        if target.exists() { return; }
+
+        // Find plugin source: check extracted hermes-agent, then app_dir
+        let source = self.hermes_home.join("hermes-agent").join("plugins").join("aihel");
+        let source = if source.exists() { source }
+        else if let Some(app_dir) = self.app_dir() {
+            app_dir.join("hermes-agent").join("plugins").join("aihel")
+        } else { return; };
+
+        if !source.exists() { return; }
+        let _ = std::fs::create_dir_all(&target);
+        for entry in std::fs::read_dir(&source).into_iter().flatten().flatten() {
+            let src = entry.path();
+            if src.extension().and_then(|e| e.to_str()) == Some("py") {
+                let _ = std::fs::copy(&src, target.join(src.file_name().unwrap()));
+            }
+        }
+        log::info!("AI-Hel plugin installed to {}", target.display());
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -581,6 +605,9 @@ impl AgentManager {
         self.ensure_api_server_config();
         self.ensure_dot_env();
         log(&format!("config.yaml exists: {}", self.hermes_home.join("config.yaml").exists()));
+
+        // Install aihel plugin to ~/.hermes/plugins/ on first run
+        self.install_aihel_plugin();
 
         let python = self.python_path();
         log(&format!("Python path: {}", python.display()));
