@@ -1,106 +1,81 @@
-# AI-Hel2 — 本地知识桌面助手
+# AI-Hel2 —— 你的伴随式智能体
 
-一个基于 **Tauri v2** 的桌面应用，将 **AI 对话** 和 **个人知识图谱** 融合在同一界面中。你的聊天内容自动转化为结构化知识，可搜索、可关联、可演化。
+> 不是另一个 AI 聊天工具。AI-Hel2 是一个**常驻桌面、持续学习、主动关联**的伴随式智能体——它在你工作时静静运行，将你的对话、文档、思考沉淀为一张不断生长的个人知识网络。
 
-## 核心能力
+## 为什么是 AI-Hel2？
 
-### 对话
-- 对接 Hermes Agent v0.15.2（内嵌 Python 运行时）
-- 支持 DeepSeek / OpenAI / Anthropic 等任意 OpenAI 兼容 API
-- 流式对话 + 思考过程展示 + 工具调用时间线
-- 按住右 Alt 语音输入（PTT）+ 语音播报
+市面上的 AI 助手大多是"用完即走"的对话框：你问，它答，然后一切归零。下一次对话时，它不记得你是谁，更不知道你上次在做什么。
 
-### 知识图谱（Nexus 引擎）
-- **自动提取**：文档和对话内容通过 LLM 自动提取实体和关系
-- **Barnes-Hut 四叉树渲染**：对齐 Obsidian 物理引擎，力导向布局
-- **文档折叠视图**：一键收起所有实体，只看文档关系网
-- **6 组维护操作**：健康检查 / 去重合并 / 文档归类 / 图谱分析 / 传递推理 / 冲突检测
-- **推断实体**：LLM 驱动的跨文档推理，自动发现隐藏关联
+**AI-Hel2 的不同之处**：它在本地持续运行，每一次对话、每一篇文档、每一个想法，都被自动提取、关联、沉淀为你的**个人知识图谱**。它不是你的工具，是你的**数字同事**——越用越懂你，越用越有用。
 
-### 知识管理
-- Wiki 文档树：Markdown 编辑（Cherry）+ 文件预览 + 拖拽上传
-- 全文搜索 + 实体详情面板
-- 图表例自定义颜色、缩放淡出、连线透明度
+## 三大核心能力
 
-### 智能体平台
-- 多 Agent 注册与健康监控
-- API 配置向导（首次启动引导）
-- 知识引擎 LLM 独立配置（支持从 Agent 配置一键复制）
+### 🧠 伴随式 Agent 引擎
+
+- **常驻桌面，随时唤醒**：Alt+R 唤起对话，右 Alt 按住说话，松开发送——像跟同事说话一样自然
+- **多 Agent 协作平台**：不是绑定单一模型，而是注册和管理多个 Agent，各自负责不同领域
+- **工具调用 + 网页搜索**：Agent 能主动查资料、搜网页、操作知识库，不只是"聊天"
+- **内嵌运行时不依赖外环境**：Hermes Agent 和 Python 运行时全部内置，安装即用
+
+### 🔗 Nexus 知识引擎——让知识自己生长
+
+这是 AI-Hel2 最大的特色：**你的对话和文档会自动变成结构化的知识网络**。
+
+- **自动知识提取**：每段对话结束后，Nexus 引擎在后台通过 LLM 自动提取其中的实体、概念和关系，写入知识图谱——你不需要手动整理
+- **跨文档推理**：当知识积累到一定程度，引擎会自动发现跨文档的隐藏关联——"这篇笔记里提到的方案，和三个月前那篇会议记录里的思路其实是一回事"
+- **6 组智能维护**：健康检查、去重合并、文档归类、图谱分析、传递推理、冲突检测——知识库不是堆积，是生长
+- **文档折叠视图**：一键从细节中抽身，看到整个知识领域的宏观结构
+
+### 📊 知识可视化——看见你的思考
+
+- **力导向知识图谱**：Barnes-Hut 四叉树物理引擎，节点自然分布，关联一目了然
+- **对话与图谱联动**：Agent 提到某个概念，图谱自动高亮旋转到对应节点——"说到哪儿，看到哪儿"
+- **全文搜索 + 实体面板**：不只是搜关键词，而是搜到知识网络中的位置和上下文
+
+## 与典型 AI 工具的区别
+
+| | 普通 AI 聊天 | 笔记软件 | **AI-Hel2** |
+|---|---|---|---|
+| 记住上下文 | 单次对话内 | 需手动整理 | **自动沉淀到知识图谱** |
+| 知识关联 | 无 | 手动双链 | **LLM 自动提取 + 推理发现** |
+| 运行方式 | 打开即用，关闭即忘 | 被动记录 | **常驻桌面，持续伴随** |
+| 多 Agent | 无 | 无 | **注册管理多个 Agent** |
+| 数据归属 | 云端 | 本地/云端 | **完全本地，隐私自主** |
+| 语音交互 | 部分支持 | 无 | **PTT 语音 + TTS 播报** |
 
 ## 技术架构
 
 ```
-┌─ Tauri v2 Shell (Rust) ────────────────────────────┐
-│  窗口管理 / 系统托盘 / 全局快捷键 / 文件监听          │
-├─ Frontend (React + TypeScript + Vite) ──────────────┤
-│  D3-force 图谱 / Cherry Markdown / Excalidraw 画板   │
-├─ Nexus Knowledge Engine (Rust + Python) ────────────┤
-│  SQLite 缓存 / LLM 提取 / Barnes-Hut 物理 / 去重     │
-├─ Hermes Agent v0.15.2 (Python, embedded) ───────────┤
-│  AI 对话 / 工具调用 / 网页搜索 / 知识库插件            │
-└──────────────────────────────────────────────────────┘
+┌─ Tauri v2 Shell (Rust) ──────────────────────────────┐
+│  窗口管理 / 系统托盘 / 全局快捷键 / 文件监听            │
+├─ Frontend (React + TypeScript + Vite) ────────────────┤
+│  D3-force 图谱 / Cherry Markdown / Excalidraw 画板    │
+├─ Nexus Knowledge Engine (Rust + Python) ──────────────┤
+│  SQLite / LLM 提取 / Barnes-Hut 物理 / 推理 / 去重    │
+├─ Hermes Agent v0.15.2 (Python, 内嵌) ─────────────────┤
+│  AI 对话 / 工具调用 / 网页搜索 / 知识库插件             │
+└───────────────────────────────────────────────────────┘
 ```
 
-## 安装
+## 快速开始
 
-从 [Releases](https://github.com/fanbingqian/AI-Hel2/releases) 下载最新 `AI-Hel2_x.x.x_x64-setup.exe`，一键安装。
+从 [Releases](https://github.com/fanbingqian/AI-Hel2/releases) 下载最新安装包，一键安装。
 
-### 安装后配置
-1. 打开应用 → 注册账号 → 进入 API 配置向导
-2. 填入大模型 API Key（DeepSeek / OpenAI 等）
-3. Agent 自动启动 → 开始对话
-4. 知识库会自动初始化，Agent 已知知识库工具
+### 安装后三步走
+1. 打开应用 → 注册本地账号
+2. 填入大模型 API Key（DeepSeek / OpenAI / Anthropic 等均可）
+3. Agent 自动启动，知识库自动初始化 → 开始对话，知识开始生长
 
 ### 系统要求
 - Windows 10/11 x64
-- 不需要额外安装 Python 或 Git（已内置）
+- 无需额外安装 Python 或 Git（已内置）
 
 ## 开发
 
 ```bash
-# 安装依赖
-npm install
-
-# 开发模式
-npm run tauri dev
-
-# 构建安装包
-npm run tauri build
-# → src-tauri/target/release/bundle/nsis/AI-Hel2_x.x.x_x64-setup.exe
-```
-
-### 签名构建
-```bash
-# 先生成签名密钥（只需一次）
-npx tauri signer generate -w src-tauri/updater-key
-# 提示密码时直接回车（空密码）
-
-# 构建并签名
-$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content src-tauri/updater-key -Raw).Trim()
-npm run tauri build
-```
-
-## 项目结构
-
-```
-AI-Hel2/
-├── src/                     # React 前端
-│   ├── components/          # UI 组件
-│   │   ├── chat/            # 聊天面板
-│   │   ├── sphere/          # 知识图谱（物理引擎 + 渲染）
-│   │   ├── knowledge/       # 文档编辑 + 实体浏览
-│   │   ├── settings/        # 设置页
-│   │   └── auth/            # 登录注册
-│   ├── stores/              # Zustand 状态管理
-│   ├── services/            # API 调用
-│   └── types/               # TypeScript 类型
-├── src-tauri/               # Rust 后端
-│   ├── src/commands/        # Tauri 命令
-│   ├── src/services/        # 核心服务（知识引擎等）
-│   ├── src/models/          # 数据模型
-│   ├── hermes-agent/        # 内嵌 Agent（构建时打包）
-│   └── migrations/          # SQLite 迁移
-└── docs/                    # 设计文档
+npm install          # 安装依赖
+npm run tauri dev    # 开发模式
+npm run tauri build  # 构建安装包
 ```
 
 ## License
