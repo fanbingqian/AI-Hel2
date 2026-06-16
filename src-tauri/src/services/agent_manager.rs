@@ -355,8 +355,13 @@ impl AgentManager {
         // Allow open access on localhost (no user auth required)
         cmd.env("GATEWAY_ALLOW_ALL_USERS", "true");
 
+        // Enable the API server (OpenAI-compatible /v1/chat/completions endpoint)
+        cmd.env("API_SERVER_ENABLED", "true");
+        cmd.env("API_SERVER_HOST", "127.0.0.1");
+        cmd.env("API_SERVER_PORT", &self.port.to_string());
         // Default provider settings (overridden by config.yaml if present)
         cmd.env("API_SERVER_KEY", "aihel2-local-dev");
+        cmd.env("API_SERVER_ALLOW_ALL_USERS", "true");
         cmd.env("HERMES_INFERENCE_PROVIDER", "deepseek");
         cmd.env("HERMES_INFERENCE_MODEL", "deepseek-v4-flash");
         cmd.env("API_SERVER_MODEL_NAME", "deepseek-v4-flash");
