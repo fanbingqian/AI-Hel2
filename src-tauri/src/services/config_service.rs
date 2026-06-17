@@ -261,11 +261,13 @@ pub fn dirs_ai_hel2_home() -> PathBuf {
             return p;
         }
     }
-    // 2. Portable mode: data/ next to the binary
+    // 2. Portable mode: NSIS generates uninstall.exe next to the binary — this
+    //    is the most reliable signal that we are in an installed (not dev) copy.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            let portable_data = exe_dir.join("data");
-            if portable_data.exists() && portable_data.is_dir() {
+            if exe_dir.join("uninstall.exe").exists() {
+                let portable_data = exe_dir.join("data");
+                let _ = std::fs::create_dir_all(&portable_data);
                 log::info!("Portable mode: data dir at {}", portable_data.display());
                 return portable_data;
             }
