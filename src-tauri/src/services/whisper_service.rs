@@ -4,6 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 /// The result of a recording + transcription cycle
@@ -292,7 +295,10 @@ impl WhisperService {
         let whisper_exe = Self::find_whisper_exe(app_handle)?;
         let model_path = Self::find_model(app_handle)?;
 
-        let output = Command::new(&whisper_exe)
+        let mut cmd = Command::new(&whisper_exe);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        let output = cmd
             .arg("-m")
             .arg(&model_path)
             .arg("-f")

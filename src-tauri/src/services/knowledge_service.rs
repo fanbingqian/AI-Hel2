@@ -1933,7 +1933,10 @@ impl KnowledgeService {
             } else {
                 PathBuf::from(*name)
             };
-            if std::process::Command::new(&path).arg("--version").output().is_ok() {
+            let mut cmd = std::process::Command::new(&path);
+            #[cfg(windows)]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            if cmd.arg("--version").output().is_ok() {
                 return path;
             }
         }
@@ -2125,6 +2128,8 @@ impl KnowledgeService {
         }
 
         let mut cmd = std::process::Command::new(python);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
         // Pass Nexus LLM env vars from config.yaml to the subprocess
         for (k, v) in self.nexus_env_vars() {
@@ -2542,6 +2547,8 @@ impl KnowledgeService {
         }
 
         let mut cmd = std::process::Command::new(python);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
         for (k, v) in self.nexus_env_vars() {
             cmd.env(&k, &v);
@@ -2580,6 +2587,8 @@ impl KnowledgeService {
         }
 
         let mut cmd = std::process::Command::new(python);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
         for (k, v) in self.nexus_env_vars() {
             cmd.env(&k, &v);
@@ -2624,6 +2633,8 @@ impl KnowledgeService {
         }
 
         let mut cmd = std::process::Command::new(python);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
         for (k, v) in self.nexus_env_vars() {
             cmd.env(&k, &v);
@@ -2877,6 +2888,8 @@ impl KnowledgeService {
             .unwrap_or_else(|_| "[]".to_string());
 
         let mut cmd = std::process::Command::new(python);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
         for (k, v) in self.nexus_env_vars() {
             cmd.env(&k, &v);
@@ -6058,6 +6071,8 @@ impl KnowledgeService {
         let py_path = self.python_script_path("maintain_dedup.py");
 
         let mut cmd = std::process::Command::new("python");
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg(&py_path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -6945,6 +6960,8 @@ impl KnowledgeService {
         let py_path = self.python_script_path("transitive_infer.py");
 
         let mut cmd = std::process::Command::new("python");
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg(&py_path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -7179,6 +7196,8 @@ impl KnowledgeService {
         let json_input = serde_json::to_string(&edges_json).unwrap_or_default();
 
         let mut cmd = std::process::Command::new("python");
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg(&py_path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

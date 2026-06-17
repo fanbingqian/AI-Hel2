@@ -253,7 +253,11 @@ fn find_openclaw_binary() -> Option<PathBuf> {
     #[cfg(not(windows))]
     let which = "which";
 
-    if let Ok(output) = Command::new(which).arg("openclaw").output() {
+    let mut which_cmd = Command::new(which);
+    which_cmd.arg("openclaw");
+    #[cfg(windows)]
+    which_cmd.creation_flags(0x08000000);
+    if let Ok(output) = which_cmd.output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {

@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use super::agents::{AgentConfig, AgentConnectionConfig};
 
 /// Three-layer detection for locally installed AI agents.
@@ -100,7 +103,11 @@ impl AgentDetector {
         let shells: &[&str] = &["which"];
 
         for shell_cmd in shells {
-            if let Ok(output) = Command::new(shell_cmd).arg("claude").output() {
+            let mut claude_cmd = Command::new(shell_cmd);
+            claude_cmd.arg("claude");
+            #[cfg(windows)]
+            claude_cmd.creation_flags(0x08000000);
+            if let Ok(output) = claude_cmd.output() {
                 if output.status.success() {
                     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !path.is_empty() {
@@ -108,7 +115,11 @@ impl AgentDetector {
                     }
                 }
             }
-            if let Ok(output) = Command::new(shell_cmd).arg("codex").output() {
+            let mut codex_cmd = Command::new(shell_cmd);
+            codex_cmd.arg("codex");
+            #[cfg(windows)]
+            codex_cmd.creation_flags(0x08000000);
+            if let Ok(output) = codex_cmd.output() {
                 if output.status.success() {
                     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !path.is_empty() {

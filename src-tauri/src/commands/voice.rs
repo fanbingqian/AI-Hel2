@@ -44,7 +44,10 @@ fn python_exe() -> PathBuf {
         } else {
             PathBuf::from(*name)
         };
-        if Command::new(&path).arg("--version").output().is_ok() {
+        let mut cmd = Command::new(&path);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if cmd.arg("--version").output().is_ok() {
             return path;
         }
     }
@@ -146,13 +149,21 @@ pub async fn check_voice_deps(app: AppHandle) -> Result<Vec<String>, String> {
     let mut missing: Vec<String> = Vec::new();
 
     // sherpa-onnx (TTS)
-    match Command::new(&python).args(["-c", "import sherpa_onnx"]).output() {
+    let mut cmd = Command::new(&python);
+    cmd.args(["-c", "import sherpa_onnx"]);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    match cmd.output() {
         Ok(o) if o.status.success() => {}
         _ => missing.push("sherpa-onnx (pip install sherpa-onnx)".into()),
     }
 
     // numpy (TTS)
-    match Command::new(&python).args(["-c", "import numpy"]).output() {
+    let mut cmd2 = Command::new(&python);
+    cmd2.args(["-c", "import numpy"]);
+    #[cfg(windows)]
+    cmd2.creation_flags(CREATE_NO_WINDOW);
+    match cmd2.output() {
         Ok(o) if o.status.success() => {}
         _ => missing.push("numpy (pip install numpy)".into()),
     }
@@ -179,7 +190,10 @@ pub async fn voice_diagnose(app: AppHandle) -> Result<String, String> {
     // Python
     let py = python_exe();
     lines.push(format!("Python: {}", py.display()));
-    match Command::new(&py).arg("--version").output() {
+    let mut cmd = Command::new(&py);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    match cmd.arg("--version").output() {
         Ok(o) => lines.push(format!("  version: {}", String::from_utf8_lossy(&o.stdout).trim())),
         Err(e) => lines.push(format!("  error: {e}")),
     }
