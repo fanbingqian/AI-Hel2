@@ -297,8 +297,10 @@ async fn probe_health(
 ) -> bool {
     let (method_is_post, health_url) = match agent_type {
         "hermes_builtin" => {
-            let stripped = base_url.strip_suffix("/v1").unwrap_or(base_url);
-            (false, format!("{stripped}/health"))
+            // The local Hermes gateway always runs on localhost — probe it directly
+            // regardless of what base_url is configured (which may point to the
+            // upstream LLM provider, not the gateway itself).
+            (false, "http://127.0.0.1:18642/health".into())
         }
         "openclaw" => {
             // OpenClaw: chat completions HTTP API is disabled by default.

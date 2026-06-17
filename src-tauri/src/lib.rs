@@ -236,33 +236,6 @@ pub fn run() {
             // Voice overlay window — centered recording indicator (hidden by default)
             commands::voice_overlay::create_overlay_window(app);
 
-            // Initial wiki scan — indexes existing markdown files on startup.
-            // The file watcher only catches changes after startup, so this
-            // ensures existing files (including subdirectories) are indexed.
-            {
-                let scan_handle = handle.clone();
-                std::thread::spawn(move || {
-                    let ks = scan_handle.state::<KnowledgeState>();
-                    let svc = ks.service.blocking_lock();
-                    match svc.scan_wiki_directory() {
-                        Ok(result) => {
-                            if result.scanned > 0 {
-                                log::info!(
-                                    "Wiki initial scan: {} files, {} new entities, {} stale cleaned, {} failed",
-                                    result.scanned, result.total_new, result.stale_entities_removed, result.failed
-                                );
-                            }
-                            if !result.errors.is_empty() {
-                                for e in &result.errors {
-                                    log::warn!("Wiki scan error: {e}");
-                                }
-                            }
-                        }
-                        Err(e) => log::warn!("Wiki initial scan failed: {e}"),
-                    }
-                });
-            }
-
             // Start Hermes Agent in background thread
             let startup_handle = handle.clone();
             // Force-extract bundled resources so AgentManager can find them on disk
@@ -280,6 +253,27 @@ pub fn run() {
                     log::error!("Agent startup failed: {e}");
                 } else {
                     log::info!("Agent started successfully on port {}", am.port());
+                }
+
+                // Initial wiki scan — runs AFTER Agent startup so hermes-agent.zip
+                // is already extracted and extract_service.py is available on disk.
+                let ks = startup_handle.state::<KnowledgeState>();
+                let svc = ks.service.blocking_lock();
+                match svc.scan_wiki_directory() {
+                    Ok(result) => {
+                        if result.scanned > 0 {
+                            log::info!(
+                                "Wiki initial scan: {} files, {} new entities, {} stale cleaned, {} failed",
+                                result.scanned, result.total_new, result.stale_entities_removed, result.failed
+                            );
+                        }
+                        if !result.errors.is_empty() {
+                            for e in &result.errors {
+                                log::warn!("Wiki scan error: {e}");
+                            }
+                        }
+                    }
+                    Err(e) => log::warn!("Wiki initial scan failed: {e}"),
                 }
             });
 
