@@ -35,6 +35,25 @@ pub fn run() {
     let config_service = ConfigService::new();
     let hermes_home = config_service.hermes_home().to_path_buf();
     std::fs::create_dir_all(&hermes_home).expect("Failed to create AI-Hel2 data directory");
+
+    // Initialize file-based logging so diagnostic messages are visible
+    let log_path = hermes_home.join("app.log");
+    let log_file = Box::new(
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .unwrap_or_else(|_| {
+                std::fs::File::create(&log_path).unwrap()
+            }),
+    );
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Info)
+        .target(env_logger::Target::Pipe(log_file))
+        .format_timestamp_secs()
+        .init();
+    log::info!("AI-Hel2 starting, HERMES_HOME={}", hermes_home.display());
+
     let mut connection_service = ConnectionService::new();
     connection_service.config.api_key = Some("aihel2-local-dev".into());
 
