@@ -1981,13 +1981,6 @@ impl KnowledgeService {
     }
 
     /// Path to extract_service.py (created in P3).
-    fn extract_service_script() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("services")
-            .join("extract_service.py")
-    }
-
     fn has_api_key(vars: &[(String, String)]) -> bool {
         // hermes_builtin doesn't need an API key (uses local gateway)
         let is_hermes = vars.iter().any(|(k, v)| k == "NEXUS_LLM_PROVIDER" && v == "hermes_builtin");
@@ -2136,12 +2129,13 @@ impl KnowledgeService {
         text: &str,
         context: Option<&str>,
     ) -> Result<serde_json::Value, String> {
-        let script = Self::extract_service_script();
+        let script = self.python_script_path("extract_service.py");
         if !script.exists() {
             return Err("extract_service.py not found — will be available in P3".into());
         }
 
-        let mut cmd = std::process::Command::new(python);
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
@@ -2560,7 +2554,8 @@ impl KnowledgeService {
             return Err("file_tools.py not found".into());
         }
 
-        let mut cmd = std::process::Command::new(python);
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
@@ -2595,12 +2590,13 @@ impl KnowledgeService {
         file_type: &str,
         file_name: &str,
     ) -> Result<String, String> {
-        let script = Self::extract_service_script();
+        let script = self.python_script_path("extract_service.py");
         if !script.exists() {
             return Err("extract_service.py not found".into());
         }
 
-        let mut cmd = std::process::Command::new(python);
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
@@ -2641,12 +2637,13 @@ impl KnowledgeService {
         images_json: &str,
         image_count: u32,
     ) -> Result<String, String> {
-        let script = Self::extract_service_script();
+        let script = self.python_script_path("extract_service.py");
         if !script.exists() {
             return Err("extract_service.py not found".into());
         }
 
-        let mut cmd = std::process::Command::new(python);
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
@@ -2893,7 +2890,7 @@ impl KnowledgeService {
         file_name: &str,
         existing_dirs: &[String],
     ) -> Result<serde_json::Value, String> {
-        let script = Self::extract_service_script();
+        let script = self.python_script_path("extract_service.py");
         if !script.exists() {
             return Err("extract_service.py not found".into());
         }
@@ -2901,7 +2898,8 @@ impl KnowledgeService {
         let dirs_json = serde_json::to_string(existing_dirs)
             .unwrap_or_else(|_| "[]".to_string());
 
-        let mut cmd = std::process::Command::new(python);
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.env("PYTHONIOENCODING", "utf-8");
