@@ -1,0 +1,2758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEIMDALL Console</title>
+<script src="https://visjs.github.io/vis-network/standalone/umd/vis-network.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg-deep: #0f0f13; --bg-raised: #16161e; --bg-card: #1c1c28;
+  --surface: #222230; --border: #2e2e3c; --border-light: #3d3d50;
+  --text: #ebebf5; --text-muted: #9d9db5; --text-weak: #6e6e85;
+  --accent: #6c5ce7; --accent-purple: #9b8cf0; --blue: #5d9bff;
+  --green: #2dd4a0; --amber: #f6b83d; --red: #f06565;
+  --pink: #f06ba8; --cyan: #2dd4c8;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-lg: 16px;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px; --radius-xl: 20px; --radius-full: 9999px;
+  --sidebar-collapsed: 52px; --sidebar-expanded: 220px;
+  --sidebar-bg: #11111a; --sidebar-hover: #1a1a28; --sidebar-active: #6c5ce720;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif; background: var(--bg-deep); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* App Shell */
+.app-shell { display: flex; height: 100vh; overflow: hidden; }
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-expanded); flex-shrink: 0;
+  background: var(--sidebar-bg); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: width var(--ease-out) 0.25s;
+  overflow: hidden; z-index: 20;
+}
+.sidebar.collapsed { width: var(--sidebar-collapsed); }
+.sidebar.collapsed .sidebar-label { display: none; }
+.sidebar.collapsed .sidebar-item { justify-content: center; padding: 12px 0; }
+.sidebar.collapsed .sidebar-brand { margin: 12px auto; font-size: 16px; }
+
+.sidebar-top { flex: 1; display: flex; flex-direction: column; padding: 8px 0; }
+.sidebar-brand {
+  width: 36px; height: 36px; border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent), var(--accent-purple));
+  border: none; color: #fff; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  margin: 4px auto 12px; flex-shrink: 0;
+}
+.sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+
+.sidebar-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius-md);
+  border: none; background: none; color: var(--text-muted);
+  font-size: 14px; cursor: pointer;
+  transition: all var(--ease-out) 0.15s;
+  white-space: nowrap; overflow: hidden;
+}
+.sidebar-item:hover { background: var(--sidebar-hover); color: var(--text); }
+.sidebar-item.active { background: var(--sidebar-active); color: var(--accent); }
+.sidebar-icon { font-size: 18px; flex-shrink: 0; }
+.sidebar-label { font-size: 13px; }
+
+.sidebar-bottom { padding: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.sidebar-toggle { transition: transform 0.25s var(--ease-out); }
+.collapsed .sidebar-toggle { transform: rotate(180deg); }
+
+/* Topbar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px; background: var(--bg-raised);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; height: 36px;
+}
+.topbar-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.topbar-right { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }
+.topbar-sep { color: var(--border); }
+.topbar-btn {
+  padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-muted); cursor: pointer;
+  font-size: 10px; transition: all 0.15s;
+}
+.topbar-btn:hover { border-color: var(--accent); color: var(--text); }
+.ctx-bar { display: flex; align-items: center; gap: 4px; }
+.ctx-label { font-size: 10px; }
+.ctx-bar .fill { height: 4px; border-radius: 2px; background: var(--accent); transition: width 0.5s; }
+.ctx-bar .track { width: 60px; height: 4px; border-radius: 2px; background: var(--border); }
+
+.lvl { padding: 1px 6px; border-radius: 8px; font-weight: 600; font-size: 10px; }
+.lvl-L1 { background: #2dd4a022; color: var(--green); }
+.lvl-L2 { background: #f6b83d22; color: var(--amber); }
+.lvl-L3 { background: #f0656522; color: var(--red); }
+
+/* Main Area & Views */
+.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-deep); }
+.view { display: none; flex: 1; overflow: hidden; }
+.view.active { display: flex; }
+.view-chat-active { flex-direction: row !important; }
+
+.panel { flex: 1; overflow-y: auto; padding: 16px; min-height: 0; }
+.panel-left { flex: 0 0 480px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.panel-right { flex: 1; display: flex; flex-direction: column; }
+
+/* Knowledge Panel */
+.knowledge-panel {
+  width: 360px; flex-shrink: 0;
+  background: var(--bg-raised); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: width var(--ease-out) 0.25s, opacity 0.25s;
+  overflow: hidden;
+}
+.knowledge-panel.hidden { width: 0; opacity: 0; pointer-events: none; border-left: none; }
+.kp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.kp-header h3 { font-size: 14px; margin: 0; }
+.kp-close {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 16px; padding: 2px 6px;
+}
+.kp-close:hover { color: var(--text); }
+.kp-content { flex: 1; overflow-y: auto; padding: 16px; font-size: 13px; }
+
+/* Function Chips */
+.chips-row { padding: 6px 12px; flex-shrink: 0; overflow: hidden; }
+.chips-scroll { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+.chips-scroll::-webkit-scrollbar { display: none; }
+.chip {
+  padding: 5px 12px; border-radius: var(--radius-full); border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-muted); font-size: 12px;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  transition: all var(--ease-out) 0.15s;
+}
+.chip:hover { border-color: var(--accent); color: var(--text); background: var(--surface); }
+.chip:active { transform: scale(0.96); }
+
+/* Knowledge Card */
+.knowledge-card {
+  margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-deep); overflow: hidden; font-size: 12px;
+  animation: kcSlideIn 0.3s var(--ease-spring);
+}
+@keyframes kcSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.kc-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px; cursor: pointer; color: var(--text-muted);
+  transition: background 0.15s; font-size: 11px;
+}
+.kc-header:hover { background: var(--surface); }
+.kc-icon { font-size: 14px; }
+.kc-title { font-weight: 600; font-size: 11px; }
+.kc-toggle { margin-left: auto; font-size: 10px; transition: transform 0.2s; }
+.knowledge-card.collapsed .kc-toggle { transform: rotate(-90deg); }
+.knowledge-card.collapsed .kc-body { display: none; }
+.kc-body { padding: 0 10px 10px; }
+.kc-row { margin: 5px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.kc-label { color: var(--text-weak); font-size: 10px; margin-right: 4px; }
+.kc-value { font-weight: 700; color: var(--accent); font-size: 11px; }
+.kc-items { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.kc-entity {
+  padding: 2px 8px; border-radius: var(--radius-full); font-size: 10px; cursor: pointer;
+  transition: background 0.15s;
+}
+.kc-entity.concept { background: #6c5ce720; color: var(--accent); }
+.kc-entity.content { background: #2dd4a020; color: var(--green); }
+.kc-entity.person { background: #f6b83d20; color: var(--amber); }
+.kc-entity.event { background: #f0656520; color: var(--red); }
+.kc-entity.artifact { background: #9b8cf020; color: var(--accent-purple); }
+.kc-domain {
+  padding: 2px 8px; border-radius: var(--radius-full);
+  background: var(--surface); color: var(--cyan); font-size: 10px;
+  border: 1px solid var(--border);
+}
+.kc-actions { margin-top: 6px; display: flex; gap: 6px; }
+.kc-btn {
+  padding: 3px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-muted); font-size: 10px; cursor: pointer;
+  transition: all 0.15s;
+}
+.kc-btn:hover { border-color: var(--accent); color: var(--text); }
+
+/* Chat messages */
+.chat-messages { flex: 1; overflow-y: auto; padding: 12px 8px; scroll-behavior: smooth; }
+.chat-turn { margin-bottom: 24px; }
+.chat-msg { padding: 12px 16px; border-radius: 16px; font-size: 13px; line-height: 1.8; position: relative; max-width: 85%; }
+.chat-msg.user { background: linear-gradient(135deg, var(--accent), #7c3aed); color: #fff; margin-left: auto; margin-bottom: 4px; border-bottom-right-radius: 6px; }
+.chat-msg.assistant { background: var(--bg-card); border: 1px solid var(--border); margin-right: auto; border-bottom-left-radius: 6px; }
+.chat-msg .msg-header { font-size: 11px; font-weight: 700; margin-bottom: 4px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+.chat-msg .msg-reasoning { font-size: 11px; color: var(--amber); background: var(--bg-deep); border-left: 2px solid var(--amber); padding: 6px 10px; margin: 6px 0; border-radius: 0 8px 8px 0; cursor: pointer; display: none; }
+.chat-msg .msg-reasoning.open { display: block; }
+.chat-msg .msg-footer { font-size: 10px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 10px; align-items: center; }
+.chat-msg .msg-footer .reasoning-toggle { cursor: pointer; color: var(--cyan); }
+.chat-msg .msg-footer .reasoning-toggle:hover { text-decoration: underline; }
+.chat-msg .msg-content { white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text; }
+
+/* Chat input */
+.chat-input-row { display: flex; flex-direction: column; gap: 0; padding: 8px 0 0; border-top: 1px solid var(--border); }
+.chat-input-row textarea { width: 100%; padding: 10px 14px; border-radius: 12px 12px 0 0; border: 1px solid var(--border); border-bottom: none; background: var(--bg-card); color: var(--text); font-size: 13px; resize: none; outline: none; min-height: 40px; max-height: 200px; font-family: inherit; line-height: 1.5; overflow-y: auto; transition: border-color 0.2s; }
+.chat-input-row textarea:focus { border-color: var(--accent); }
+.chat-input-row .input-toolbar { display: flex; gap: 6px; padding: 6px 10px; background: var(--bg-card); border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; align-items: center; }
+.chat-input-row .input-toolbar .toolbar-left { display: flex; gap: 4px; flex: 1; }
+.chat-input-row .input-toolbar button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-deep); color: var(--text-muted); cursor: pointer; font-size: 12px; transition: all 0.15s; display: flex; align-items: center; gap: 4px; }
+.chat-input-row .input-toolbar button:hover { border-color: var(--accent); color: var(--text); }
+.chat-input-row .input-toolbar .btn-send { padding: 6px 16px; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--accent), var(--accent-purple)); color: #fff; cursor: pointer; font-weight: 600; font-size: 12px; transition: opacity 0.2s; }
+.chat-input-row .input-toolbar .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-input-row .input-toolbar .btn-send.btn-stop { background: var(--red) !important; }
+
+/* Attachment chips */
+.attach-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px; }
+.attach-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #6c5ce722; border: 1px solid #6c5ce744; border-radius: 12px; font-size: 11px; color: var(--accent-purple); max-width: 200px; }
+.attach-chip .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip .chip-remove { cursor: pointer; color: var(--accent-purple); font-weight: 700; font-size: 14px; line-height: 1; }
+.attach-chip .chip-remove:hover { color: var(--red); }
+.attach-chip .chip-size { font-size: 10px; color: var(--accent-purple); opacity: 0.7; }
+
+/* Drag-over */
+.chat-drop-zone { position: relative; }
+.chat-drop-zone.drag-over::after { content: '释放文件以上传并读取'; position: absolute; inset: 0; background: #6c5ce722; border: 2px dashed var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--accent); z-index: 20; pointer-events: none; }
+
+/* Cards */
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+.card h3 { font-size: 14px; margin-bottom: 8px; }
+.card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Persona */
+.persona-layer { border-left: 3px solid var(--accent); padding-left: 12px; margin-bottom: 10px; }
+.persona-layer.immune { border-left-color: var(--red); }
+.persona-layer .layer-label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+.persona-layer .layer-content { font-size: 12px; white-space: pre-wrap; color: var(--text); }
+
+/* Reconnect cards */
+.reconnect-card { background: linear-gradient(135deg, #1e1b4b, #16161e); border: 1px solid #4338ca; border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+.reconnect-card .rec-name { font-weight: 700; color: var(--amber); }
+.reconnect-card .rec-detail { font-size: 12px; color: var(--text-muted); margin: 4px 0; }
+.reconnect-card .rec-stats { font-size: 11px; color: var(--text); }
+
+/* Graph */
+#graph-container { flex: 1; min-height: 400px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); position: relative; overflow: hidden; }
+.graph-toolbar { display: flex; gap: 8px; padding: 8px 0; align-items: center; }
+.graph-toolbar input { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 12px; width: 200px; }
+.graph-toolbar input:focus { border-color: var(--accent); outline: none; }
+.graph-legend { position: absolute; top: 8px; left: 8px; background: #16161eee; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 10px; z-index: 10; color: var(--text-muted); }
+.graph-legend b { color: var(--text); font-size: 11px; }
+.graph-legend .legend-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.graph-legend .legend-node { width: 10px; height: 10px; border-radius: 50%; }
+.graph-legend .legend-node.square { border-radius: 2px; }
+.graph-legend .legend-node.diamond { border-radius: 1px; transform: rotate(45deg); width: 8px; height: 8px; }
+.graph-legend .legend-line { width: 16px; height: 0; border-top: 1.5px solid; }
+.graph-legend .legend-line.dashed { border-top-style: dashed; }
+.graph-legend .legend-line.dotted { border-top-style: dotted; }
+
+/* Tables */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 600; }
+.data-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.data-table tr:hover { background: #ffffff05; }
+
+/* Mastery */
+.mastery-bar { display: flex; gap: 2px; }
+.mastery-bar .dot { width: 20px; height: 6px; border-radius: 3px; background: var(--border); cursor: pointer; transition: 0.2s; }
+.mastery-bar .dot.active { background: var(--accent); }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+.empty-state .empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.badge-person { background: #f0656522; color: #f06565; }
+.badge-org { background: #2dd4a022; color: #2dd4a0; }
+.badge-project { background: #5d9bff22; color: #5d9bff; }
+.badge-skill { background: #9b8cf022; color: #9b8cf0; }
+.badge-concept { background: #f6b83d22; color: #f6b83d; }
+.badge-bridge { background: #f06ba822; color: #f06ba8; font-size: 10px; }
+
+/* Detail panel */
+.detail-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 10px; font-size: 12px; display: none; }
+.detail-panel.open { display: block; }
+.detail-panel .close-btn { float: right; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+
+/* Metrics */
+.metric-row { display: flex; gap: 16px; margin: 8px 0; }
+.metric { text-align: center; }
+.metric .val { font-size: 24px; font-weight: 700; }
+.metric .lbl { font-size: 11px; color: var(--text-muted); }
+
+/* Timeline */
+.timeline { position: relative; padding: 0 0 0 28px; }
+.timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.timeline-date { font-size: 11px; color: var(--accent); font-weight: 700; margin: 16px 0 8px; position: relative; }
+.timeline-date::before { content: ''; position: absolute; left: -22px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.timeline-item { padding: 8px 12px; margin-bottom: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; font-size: 12px; cursor: pointer; position: relative; transition: all 0.15s; }
+.timeline-item:hover { border-color: var(--accent); }
+.timeline-item .ti-time { font-size: 10px; color: var(--text-muted); }
+.timeline-item .ti-name { font-weight: 600; }
+.timeline-filter { display: flex; gap: 8px; padding: 8px 0; align-items: center; flex-wrap: wrap; }
+.timeline-filter input, .timeline-filter select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 12px; }
+.timeline-filter input { width: 180px; }
+.timeline-filter select:focus, .timeline-filter input:focus { border-color: var(--accent); outline: none; }
+.timeline-pager { display: flex; gap: 8px; justify-content: center; padding: 12px 0; }
+.timeline-pager button { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); cursor: pointer; font-size: 12px; transition: all 0.15s; }
+.timeline-pager button:hover { border-color: var(--accent); }
+.timeline-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Modals */
+.modal-overlay { display: none; position: fixed; inset: 0; background: #00000088; z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal-box { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 16px; padding: 20px; max-width: 720px; width: 90%; max-height: 80vh; overflow-y: auto; }
+.modal-box h3 { margin-bottom: 12px; font-size: 16px; }
+.modal-box pre { background: var(--bg-deep); padding: 12px; border-radius: 10px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow-y: auto; color: var(--text); }
+.modal-close { float: right; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; }
+.file-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.file-item { padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 12px; transition: all 0.15s; }
+.file-item:hover { border-color: var(--accent); }
+.file-item .fi-name { font-weight: 600; }
+.file-item .fi-meta { font-size: 10px; color: var(--text-muted); }
+
+/* Spinner */
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top: 2px solid var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* File preview modal */
+.file-preview-overlay { display: none; position: fixed; inset: 0; background: #00000088; z-index: 100; align-items: center; justify-content: center; }
+.file-preview-overlay.open { display: flex; }
+.file-preview-box { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 16px; padding: 20px; max-width: 600px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; }
+.file-preview-box h3 { margin-bottom: 4px; font-size: 14px; }
+.file-preview-box .fp-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+.file-preview-box .fp-content { background: var(--bg-deep); padding: 12px; border-radius: 10px; font-size: 11px; overflow-y: auto; max-height: 300px; white-space: pre-wrap; word-break: break-word; color: var(--text); font-family: 'Courier New', monospace; }
+.file-preview-box .fp-entities { margin-top: 10px; }
+.file-preview-box .fp-entities h4 { font-size: 12px; margin-bottom: 4px; }
+.file-preview-box .fp-entity-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin: 2px; background: var(--accent); color: #fff; }
+.file-preview-box .fp-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+.file-preview-box .fp-actions button { padding: 8px 16px; border-radius: 10px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+.file-preview-box .fp-actions .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-purple)); color: #fff; }
+.file-preview-box .fp-actions .btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+
+/* Responsive */
+.bottom-nav { display: none; }
+@media (max-width: 768px) {
+  .sidebar { width: var(--sidebar-collapsed) !important; }
+  .sidebar .sidebar-label { display: none; }
+  .sidebar .sidebar-item { justify-content: center; padding: 12px 0; }
+  .knowledge-panel { display: none !important; }
+  .panel-left { flex: 1 !important; }
+  .bottom-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; justify-content: space-around; background: var(--bg-raised); border-top: 1px solid var(--border); z-index: 50; backdrop-filter: blur(16px); }
+  .bottom-nav button { flex: 1; padding: 10px 0; border: none; background: none; color: var(--text-muted); font-size: 11px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .bottom-nav button .nav-icon { font-size: 18px; }
+  .bottom-nav button.active { color: var(--accent); border-top: 2px solid var(--accent); }
+  .main-area { padding-bottom: 60px; }
+}
+
+</style>
+<script>
+if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && !location.pathname.startsWith('/mobile')) {
+    location.href = '/mobile';
+}
+</script>
+</head>
+<body>
+<div class="app-shell">
+  <!-- Left Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <button class="sidebar-brand" id="sidebar-brand" title="HEIMDALL">🌌</button>
+      <nav class="sidebar-nav">
+        <button class="sidebar-item active" data-view="chat" title="对话">
+          <span class="sidebar-icon">💬</span>
+          <span class="sidebar-label">对话</span>
+        </button>
+        <button class="sidebar-item" data-view="ring" title="知识环">
+          <span class="sidebar-icon">🌐</span>
+          <span class="sidebar-label">知识环</span>
+        </button>
+        <button class="sidebar-item" data-view="history" title="历史">
+          <span class="sidebar-icon">📋</span>
+          <span class="sidebar-label">历史</span>
+        </button>
+        <button class="sidebar-item" data-view="learning" title="在学的">
+          <span class="sidebar-icon">📚</span>
+          <span class="sidebar-label">在学的</span>
+        </button>
+      </nav>
+    </div>
+    <div class="sidebar-bottom">
+      <button class="sidebar-item" data-view="settings" title="设置">
+        <span class="sidebar-icon">⚙️</span>
+        <span class="sidebar-label">设置</span>
+      </button>
+      <button class="sidebar-toggle" id="sidebar-toggle" title="折叠侧栏">
+        <span class="sidebar-icon">◀</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-area" id="main-area">
+    <div class="topbar">
+      <span class="topbar-title" id="topbar-title">对话</span>
+      <div class="topbar-right">
+        <span class="ctx-bar"><span class="ctx-label">上下文</span> <span class="track"><span class="fill" id="ctx-fill" style="width:0%"></span></span> <span id="ctx-pct">0%</span></span>
+        <span class="topbar-sep">|</span>
+        <span class="lvl lvl-L1" id="elevator-lvl">L1 安全区</span>
+        <span id="entity-count">-- entities</span>
+        <span class="topbar-sep">|</span>
+        <span id="token-total">-- tokens</span>
+      </div>
+    </div>
+    <div class="view active" id="view-chat"></div>
+    <div class="view" id="view-ring"></div>
+    <div class="view" id="view-history"></div>
+    <div class="view" id="view-learning"></div>
+    <div class="view" id="view-settings"></div>
+  </main>
+
+  <!-- Right Knowledge Panel -->
+  <aside class="knowledge-panel hidden" id="knowledge-panel">
+    <div class="kp-header">
+      <h3>详情</h3>
+      <button class="kp-close" onclick="closeKnowledgePanel()">✕</button>
+    </div>
+    <div class="kp-content" id="kp-content"></div>
+  </aside>
+</div>
+
+<div class="bottom-nav" id="bottom-nav">
+  <button data-view="chat" class="active"><span class="nav-icon">💬</span>对话</button>
+  <button data-view="ring"><span class="nav-icon">🌐</span>知识环</button>
+  <button data-view="history"><span class="nav-icon">📋</span>历史</button>
+  <button data-view="learning"><span class="nav-icon">📚</span>在学的</button>
+  <button data-view="settings"><span class="nav-icon">⚙️</span>设置</button>
+</div>
+
+<div class="file-preview-overlay" id="file-preview-overlay">
+  <div class="file-preview-box">
+    <button class="modal-close" onclick="closeFilePreview()">x</button>
+    <h3 id="fp-title">文件预览</h3>
+    <div class="fp-meta" id="fp-meta"></div>
+    <div class="fp-content" id="fp-content"></div>
+    <div class="fp-entities" id="fp-entities" style="display:none"><h4>检测到的实体</h4><div id="fp-entity-list"></div></div>
+    <div class="fp-actions"><button class="btn-secondary" onclick="closeFilePreview()">取消</button><button class="btn-primary" id="fp-send-btn" onclick="sendFileAsMessage()">发送并提取实体</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="file-modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeFileBrowser()">x</button>
+    <h3 id="file-modal-title">文件浏览器</h3>
+    <div id="file-modal-body"></div>
+  </div>
+</div>
+
+<script>
+// =========================================================================
+// State
+// =========================================================================
+const API = '';
+let state = { entities: [], stats: {}, persona: { layers: [] }, chatHistory: [] };
+let currentView = 'chat';
+
+// =========================================================================
+// Init
+// =========================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  setupSidebar();
+  loadAll().then(() => showView('chat'));
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key === 'b') { e.preventDefault(); document.getElementById('sidebar').classList.toggle('collapsed'); }
+  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); const p = document.getElementById('knowledge-panel'); if (p) p.classList.toggle('hidden'); }
+});
+
+function setupSidebar() {
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const view = item.dataset.view;
+      if (view) showView(view);
+    });
+  });
+  document.getElementById('sidebar-toggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+  });
+  document.querySelectorAll('#bottom-nav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      if (view) showView(view);
+    });
+  });
+}
+
+function showView(name) {
+  currentView = name;
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  const sidebarBtn = document.querySelector(`.sidebar-item[data-view="${name}"]`);
+  if (sidebarBtn) sidebarBtn.classList.add('active');
+  document.querySelectorAll('#bottom-nav button').forEach(b => b.classList.remove('active'));
+  const navBtn = document.querySelector(`#bottom-nav button[data-view="${name}"]`);
+  if (navBtn) navBtn.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('view-chat-active'));
+  const viewEl = document.getElementById('view-' + name);
+  if (!viewEl) return;
+  viewEl.classList.add('active');
+  if (name === 'chat') viewEl.classList.add('view-chat-active');
+  const titles = {chat:'对话', ring:'知识环', history:'历史', learning:'在学的', settings:'设置'};
+  document.getElementById('topbar-title').textContent = titles[name] || name;
+  if (!viewEl.dataset.loaded) {
+    viewEl.dataset.loaded = '1';
+    switch (name) {
+      case 'chat': buildRecentTab(viewEl); break;
+      case 'ring': buildRingView(viewEl); break;
+      case 'history': buildHistoryTab(viewEl); break;
+      case 'learning': buildLearningTab(viewEl); break;
+      case 'settings': buildSettingsView(viewEl); break;
+    }
+  }
+}
+
+function buildRingView(container) {
+  buildPersonalGraphTab(container);
+}
+
+function buildSettingsView(container) {
+  container.style.overflowY = 'auto';
+  container.style.padding = '16px';
+  container.innerHTML = '<h3 style="margin-bottom:12px;font-size:14px">设置与总览</h3>'
+    + buildPersonaCards()
+    + buildReconnectCards()
+    + '<div class="card"><h3>操作</h3><div style="display:flex;flex-wrap:wrap;gap:8px">'
+    + '<button onclick="captureSnapshot()" class="topbar-btn" style="padding:6px 12px;font-size:12px">捕获快照</button>'
+    + '<button onclick="openFileBrowser()" class="topbar-btn" style="padding:6px 12px;font-size:12px">文件浏览器</button>'
+    + '<button onclick="openResourceMonitor()" class="topbar-btn" style="padding:6px 12px;font-size:12px">系统资源</button>'
+    + '<button onclick="loadPersonalGraph();switchToView(\'ring\')" class="topbar-btn" style="padding:6px 12px;font-size:12px">刷新知识环</button>'
+    + '</div></div>';
+}
+
+// =========================================================================
+// Data loading
+// =========================================================================
+async function loadAll() {
+  try {
+    const [stats, persona, entities, reconnect, skills, knowledge, chatHistory] = await Promise.all([
+      fetch(API+'/api/stats').then(r=>r.json()),
+      fetch(API+'/api/persona').then(r=>r.json()),
+      fetch(API+'/api/entities?limit=100').then(r=>r.json()),
+      fetch(API+'/api/reconnect').then(r=>r.json()),
+      fetch(API+'/api/skills').then(r=>r.json()),
+      fetch(API+'/api/knowledge?limit=50').then(r=>r.json()),
+      fetch(API+'/api/chat/history').then(r=>r.json()).catch(() => ({messages: []})),
+    ]);
+    state.stats = stats;
+    state.persona = persona;
+    state.entities = entities.entities || [];
+    state.reconnect = reconnect.suggestions || [];
+    state.skills = skills.skills || [];
+    state.knowledge = knowledge.entries || [];
+    state.chatHistory = chatHistory.messages || [];
+    updateElevator(stats);
+  } catch (e) {
+    console.error('Load error:', e);
+  }
+}
+
+async function refreshData() {
+  try {
+    const [stats, entities, skills, knowledge] = await Promise.all([
+      fetch(API+'/api/stats').then(r=>r.json()),
+      fetch(API+'/api/entities?limit=100').then(r=>r.json()),
+      fetch(API+'/api/skills').then(r=>r.json()),
+      fetch(API+'/api/knowledge?limit=50').then(r=>r.json()),
+    ]);
+    state.stats = stats;
+    state.entities = entities.entities || [];
+    state.skills = skills.skills || [];
+    state.knowledge = knowledge.entries || [];
+    updateElevator(stats);
+  } catch (e) { /* silent */ }
+}
+
+function updateElevator(stats) {
+  const el = stats.elevator || {};
+  const ec = document.getElementById('entity-count');
+  if (ec) ec.textContent = `${stats.entities || 0} entities`;
+  const lvl = document.getElementById('elevator-lvl');
+  if (lvl) {
+    if (el.L3 > 0) { lvl.textContent = 'L3 待确认'; lvl.className = 'lvl lvl-L3'; }
+    else if (el.L2 > 5) { lvl.textContent = 'L2 浮动'; lvl.className = 'lvl lvl-L2'; }
+    else { lvl.textContent = 'L1 安全区'; lvl.className = 'lvl lvl-L1'; }
+  }
+}
+
+// =========================================================================
+// Tab: 最近 (Recent) — chat + persona + reconnect
+// =========================================================================
+function buildRecentTab(main) {
+  let msgsHtml = '';
+  if (state.chatHistory && state.chatHistory.length > 0) {
+    state.chatHistory.forEach(m => {
+      if (m.role === 'user') {
+        msgsHtml += `<div class="chat-turn"><div class="chat-msg user"><div class="msg-header">You</div><div class="msg-content">${esc(m.content)}</div></div></div>`;
+      } else {
+        let footerHtml = '';
+        if (m.input_tokens || m.output_tokens) {
+          footerHtml += `<span>in:${(m.input_tokens||0).toLocaleString()} out:${(m.output_tokens||0).toLocaleString()}</span>`;
+        }
+        if (m.reasoning) {
+          footerHtml += `<span class="reasoning-toggle" onclick="this.parentElement.parentElement.querySelector('.msg-reasoning').classList.toggle('open')">推理</span>`;
+        }
+        msgsHtml += `<div class="chat-turn"><div class="chat-msg assistant">`;
+        msgsHtml += `<div class="msg-header">HEIMDALL</div>`;
+        msgsHtml += `<div class="msg-content">${formatText(m.content)}</div>`;
+        if (footerHtml) msgsHtml += `<div class="msg-footer">${footerHtml}</div>`;
+        if (m.reasoning) msgsHtml += `<div class="msg-reasoning">${esc(m.reasoning)}</div>`;
+        msgsHtml += `</div></div>`;
+      }
+    });
+  } else {
+    msgsHtml = '<div class="empty-state"><p>开始对话，你的记忆会自动储存</p></div>';
+  }
+
+  main.innerHTML = `
+    <div class="panel-left chat-drop-zone" id="chat-drop-zone">
+      <div class="chips-row"><div class="chips-scroll" id="chips-scroll">
+        <button class="chip" data-action="translate">翻译</button>
+        <button class="chip" data-action="write">写作</button>
+        <button class="chip" data-action="code">编程</button>
+        <button class="chip" data-action="knowledge">知识库</button>
+        <button class="chip" data-action="file-analyze">文件分析</button>
+        <button class="chip" data-action="daily-report">日报</button>
+        <button class="chip" data-action="summary">总结</button>
+        <button class="chip" data-action="correct">纠错</button>
+        <button class="chip" data-action="reconnect">社交重连</button>
+        <button class="chip" data-action="insights">洞察</button>
+      </div></div>
+      <div class="chat-messages" id="chat-msgs">${msgsHtml}</div>
+      <div class="attach-chips" id="attach-chips"></div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" placeholder="输入消息... (Shift+Enter 换行, Enter 发送, 支持拖拽文件)" rows="1"></textarea>
+        <input type="file" id="file-input" accept=".txt,.md,.json,.yaml,.yml,.py,.log,.csv,.pdf,.doc,.docx,.html,.htm,.xml,.css,.js,.ts,.jsx,.tsx,.toml,.cfg,.ini,.sh,.bat" onchange="handleFileSelect(event)" style="display:none" multiple>
+        <div class="input-toolbar">
+          <div class="toolbar-left">
+            <button id="attach-btn" onclick="document.getElementById('file-input').click()" title="上传文件 (支持拖拽)">附件</button>
+            <button id="mic-btn" onclick="toggleMic()" title="语音输入">录音</button>
+            <button id="speak-btn" onclick="toggleSpeak()" title="朗读回复">朗读</button>
+            <span style="font-size:10px;color:var(--text-muted);margin-left:4px">拖拽文件到此处</span>
+          </div>
+          <span style="font-size:10px;color:var(--text-muted);margin-right:4px" id="char-count">0</span>
+          <button onclick="sendMessage()" id="send-btn" class="btn-send">发送</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel panel-right">
+      ${buildPersonaCards()}
+      ${buildReconnectCards()}
+      <div class="card" id="session-memory-card"><h3>本次会话记忆</h3><div id="session-memories"><div class="empty-state" style="padding:12px"><p style="font-size:12px">开始对话后，本次会话提取的记忆会显示在这里</p></div></div></div>
+    </div>`;
+  loadSessionMemories();
+  initChips();
+  initChatInput();
+  setTimeout(() => {
+    const msgs = document.getElementById('chat-msgs');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  }, 50);
+}
+
+function buildPersonaCards() {
+  const layers = state.persona.layers || [];
+  if (!layers.length) return '<div class="card"><p class="empty-state" style="padding:20px">Persona 尚未建立，开始对话后自动构建</p></div>';
+
+  let html = '<div class="card"><h3>Persona 四层边界</h3>';
+  layers.forEach(l => {
+    const cls = l.immune ? 'persona-layer immune' : 'persona-layer';
+    const content = l.content || '(空)';
+    html += `<div class="${cls}"><div class="layer-label">${l.icon} ${l.label}${l.immune?' [免疫]':''}</div><div class="layer-content">${esc(content.substring(0,300))}</div></div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+function buildReconnectCards() {
+  const recs = state.reconnect || [];
+  let html = '<div class="card"><h3>社交关系</h3>';
+
+  html += `<div style="display:flex;gap:4px;margin-bottom:8px">
+    <input id="social-search" placeholder="查联系人关系..." style="flex:1;padding:4px 8px;font-size:11px;background:var(--bg-deep);border:1px solid var(--border);border-radius:8px;color:var(--text)" onkeydown="if(event.key==='Enter')searchSocialPerspective()">
+    <button onclick="searchSocialPerspective()" style="padding:4px 8px;font-size:11px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);border-radius:6px;cursor:pointer">搜索</button>
+  </div>`;
+
+  if (!recs.length) {
+    html += '<p class="empty-state" style="padding:12px;font-size:12px">暂无需要 reconnect 的联系人</p></div>';
+    return html;
+  }
+
+  recs.forEach(r => {
+    const days = r.days_inactive || Math.floor((Date.now()/1000 - (r.last_seen||0))/86400);
+    const v = r.valence || 0;
+    const vEmoji = v > 0.3 ? ':-)' : v < -0.3 ? ':-(' : ':-|';
+    html += `<div class="reconnect-card">
+      <div class="rec-name">你好像有一阵没联系 ${esc(r.name || '?')} 了</div>
+      <div class="rec-detail">上次联系：${days}天前 · 互动 ${r.interaction_count||0} 次 ${vEmoji}</div>
+      <div class="rec-stats">
+        强度：${renderBar(r.intensity||0.5)} 效价：${(v*100).toFixed(0)}% 健康度：${renderBar(r.health_score||0.5)}
+      </div>
+      <div style="margin-top:6px;display:flex;gap:4px">
+        <button onclick="viewSocialDetail('${r.entity_id||''}')" style="font-size:10px;padding:2px 6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer">查看趋势</button>
+        <button onclick="searchSocialPerspective('${esc(r.name||'')}')" style="font-size:10px;padding:2px 6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer">互动历史</button>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+async function searchSocialPerspective(name) {
+  if (!name) {
+    name = document.getElementById('social-search')?.value || '';
+    if (!name) return;
+  }
+  try {
+    const resp = await fetch(API+'/api/social/perspective?entity_name='+encodeURIComponent(name)).then(r=>r.json());
+    if (resp.error) { alert(resp.error); return; }
+    showSocialInsightModal(resp);
+  } catch(e) { console.error(e); }
+}
+
+async function viewSocialDetail(entityId) {
+  if (!entityId) return;
+  try {
+    const resp = await fetch(API+'/api/social/perspective?entity_id='+entityId).then(r=>r.json());
+    if (resp.error) { alert(resp.error); return; }
+    showSocialInsightModal(resp);
+  } catch(e) { console.error(e); }
+}
+
+function showSocialInsightModal(data) {
+  const e = data.entity;
+  const trends = data.trends;
+  const insight = data.insight;
+
+  let trendsHtml = '';
+  for (const [k, t] of Object.entries(trends)) {
+    const arrow = t.trend==='rising'?'↑':t.trend==='declining'?'↓':'→';
+    trendsHtml += `<tr><td>${k}</td><td>${t.recent.toFixed(3)}</td><td>${t.historical.toFixed(3)}</td><td>${arrow} ${t.trend}</td></tr>`;
+  }
+
+  let timelineHtml = '';
+  (data.timeline||[]).slice(0, 10).forEach(t => {
+    const emo = t.emotion != null ? (t.emotion > 0.3 ? ':-)' : t.emotion < -0.3 ? ':-(' : ':-|') : '';
+    timelineHtml += `<div style="font-size:10px;color:var(--text-muted)">${t.date} ${t.role} ${emo} ${t.emotion!=null?t.emotion.toFixed(2):''}</div>`;
+  });
+
+  const rc = data.reconnect;
+  const rcHtml = rc ? `<div class="reconnect-card" style="margin-top:8px"><div class="rec-name">L${rc.level} 建议：${rc.suggestion}</div></div>` : '';
+
+  const html = `<div class="modal-overlay" onclick="closeSocialModal(event)" id="social-modal" style="display:flex">
+    <div class="modal-box" style="max-width:550px;max-height:80vh;overflow-y:auto">
+      <h3>${esc(e.name)} 社交透视</h3>
+      <p style="color:var(--text-muted);font-size:12px">${e.type} · 出现${e.occurrence_count||0}次 · 总互动${data.metrics.total_interactions}次</p>
+      ${rcHtml}
+      <div style="margin:8px 0"><strong>洞察：</strong>${insight}</div>
+      <h4>3D 趋势 (${data.metrics.recent.count}条近期 vs ${data.metrics.historical.count}条历史)</h4>
+      <table class="data-table" style="font-size:10px"><tr><th>指标</th><th>近期</th><th>历史</th><th>趋势</th></tr>${trendsHtml}</table>
+      <h4 style="margin-top:8px">互动时间线</h4>
+      ${timelineHtml || '<p style="font-size:11px;color:var(--text-muted)">暂无互动记录</p>'}
+      <button class="close-btn" onclick="document.getElementById('social-modal').remove()" style="margin-top:8px;padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:12px">关闭</button>
+    </div>
+  </div>`;
+  const existing = document.getElementById('social-modal');
+  if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function closeSocialModal(event) {
+  if (event.target.id === 'social-modal') {
+    document.getElementById('social-modal').remove();
+  }
+}
+
+// =========================================================================
+// Chat
+// =========================================================================
+let _ctxTotalTokens = 0;
+
+function updateContextBar(inputTokens, outputTokens) {
+  _ctxTotalTokens = (_ctxTotalTokens || 0) + (inputTokens || 0) + (outputTokens || 0);
+  const ctxLimit = 128000;
+  const pct = Math.min(100, Math.round((_ctxTotalTokens / ctxLimit) * 100));
+  document.getElementById('ctx-fill').style.width = pct + '%';
+  document.getElementById('ctx-pct').textContent = pct + '%';
+  document.getElementById('token-total').textContent = _ctxTotalTokens.toLocaleString();
+  if (pct > 80) {
+    document.getElementById('ctx-fill').style.background = 'var(--amber)';
+  } else if (pct > 95) {
+    document.getElementById('ctx-fill').style.background = 'var(--red)';
+  }
+}
+
+let _abortController = null;
+
+function stopGeneration() {
+  if (_abortController) {
+    _abortController.abort();
+    _abortController = null;
+  }
+  const btn = document.getElementById('send-btn');
+  const input = document.getElementById('chat-input');
+  btn.textContent = '发送';
+  btn.className = 'btn-send';
+  btn.onclick = sendMessage;
+  btn.disabled = false;
+  if (input) { input.disabled = false; input.focus(); }
+}
+
+// ---------------------------------------------------------------------------
+// Chat Input — textarea auto-resize, drag-drop, paste, file chips
+// ---------------------------------------------------------------------------
+let _attachedFiles = [];
+
+function initChips() {
+  const chips = document.querySelectorAll('.chip');
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const action = chip.dataset.action;
+      handleChipAction(action);
+    });
+  });
+}
+
+function handleChipAction(action) {
+  const input = document.getElementById('chat-input');
+  const templates = {
+    translate: '请翻译以下内容：',
+    write: '请帮我写一篇关于',
+    code: '请帮我编写一段代码：',
+    summary: '请总结以下内容：',
+    correct: '纠正一下，',
+  };
+  if (templates[action] && input) {
+    input.value = templates[action];
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+  switch (action) {
+    case 'knowledge': openKnowledgePanel('entity', null); break;
+    case 'file-analyze': document.getElementById('file-input')?.click(); break;
+    case 'daily-report': openKnowledgePanel('daily', null); break;
+    case 'reconnect': openKnowledgePanel('reconnect', null); break;
+    case 'insights':
+      fetch(API+'/api/insights').then(r=>r.json()).then(data => {
+        const panel = document.getElementById('knowledge-panel');
+        const content = document.getElementById('kp-content');
+        if (panel && content) {
+          panel.classList.remove('hidden');
+          content.innerHTML = `<h4 style="margin:0 0 8px">洞察</h4><div style="font-size:12px;white-space:pre-wrap;line-height:1.6;color:var(--text)">${esc(data.insights_text||'暂无洞察数据')}</div>`;
+        }
+      }).catch(() => {});
+      break;
+  }
+}
+
+function initChatInput() {
+  const textarea = document.getElementById('chat-input');
+  const dropZone = document.getElementById('chat-drop-zone');
+  const fileInput = document.getElementById('file-input');
+  if (!textarea) return;
+
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    document.getElementById('char-count').textContent = textarea.value.length;
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  if (dropZone) {
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropZone.classList.add('drag-over');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+      });
+    });
+    dropZone.addEventListener('drop', (e) => {
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) handleDroppedFiles(files);
+    });
+  }
+
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files = [];
+    for (const item of items) {
+      if (item.kind === 'file') files.push(item.getAsFile());
+    }
+    if (files.length && document.activeElement === textarea) {
+      handleDroppedFiles(files);
+    }
+  });
+}
+
+function handleDroppedFiles(files) {
+  const textFiles = files.filter(f => {
+    const ext = '.' + (f.name || '').split('.').pop().toLowerCase();
+    return ['.txt','.md','.json','.yaml','.yml','.py','.log','.csv','.pdf','.doc','.docx','.html','.htm','.xml','.css','.js','.ts','.jsx','.tsx','.toml','.cfg','.ini','.sh','.bat'].includes(ext);
+  });
+  if (!textFiles.length) return;
+  textFiles.forEach(f => addFileChip(f));
+  processFileBatch(textFiles);
+}
+
+async function processFileBatch(files) {
+  for (const file of files) {
+    const chip = [...document.querySelectorAll('.attach-chip')].find(c => c.getAttribute('data-name') === file.name);
+    try {
+      const text = await file.text();
+      const content = text.length > 10000 ? text.slice(0, 10000) + '\n... (文件共 ' + text.length + ' 字符，仅显示前 10000 字符)' : text;
+      _attachedFiles.push({ name: file.name, content: content, size: file.size, chars: text.length });
+      if (chip) {
+        chip.style.background = '#1a3a2a'; chip.style.borderColor = '#22c55e';
+        chip.querySelector('.chip-size').textContent = (file.size/1024).toFixed(1)+'KB · '+text.length.toLocaleString()+'字';
+      }
+    } catch(e) {
+      if (chip) {
+        chip.style.background = '#3a1a1a'; chip.style.borderColor = '#ef4444';
+        chip.querySelector('.chip-size').textContent = '读取失败';
+      }
+    }
+  }
+}
+
+function addFileChip(file) {
+  const chips = document.getElementById('attach-chips');
+  if (!chips) return;
+  const existing = [...chips.children].find(c => c.getAttribute('data-name') === file.name);
+  if (existing) existing.remove();
+  _attachedFiles = _attachedFiles.filter(f => f.name !== file.name);
+
+  const chip = document.createElement('span');
+  chip.className = 'attach-chip';
+  chip.setAttribute('data-name', file.name);
+  chip.innerHTML = `
+    <span class="chip-name" title="${esc(file.name)}"> ${esc(file.name.length > 25 ? file.name.slice(0,22)+'…' : file.name)}</span>
+    <span class="chip-size">${(file.size/1024).toFixed(1)}KB</span>
+    <span class="chip-remove" onclick="removeFileChip(this.parentElement)" title="移除">x</span>
+  `;
+  chips.appendChild(chip);
+}
+
+function removeFileChip(el) {
+  const name = el.getAttribute('data-name');
+  el.remove();
+  _attachedFiles = _attachedFiles.filter(f => f.name !== name);
+}
+
+function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const btn = document.getElementById('send-btn');
+  if (!input || !btn) return;
+
+  let msg = input.value.trim();
+  if (_attachedFiles.length > 0) {
+    const fileContents = _attachedFiles.map(f => {
+      const ext = (f.name||'').split('.').pop().toLowerCase();
+      const fence = ext === 'md' ? 'markdown' : ext;
+      return `### ${f.name} (${f.chars.toLocaleString()} 字符)\n` + '```' + fence + '\n' + f.content + '\n' + '```';
+    }).join('\n\n');
+    if (msg) {
+      msg = msg + '\n\n---\n\n' + fileContents;
+    } else {
+      msg = '请阅读以下文件内容：\n\n' + fileContents;
+    }
+    _attachedFiles = [];
+    document.getElementById('attach-chips').innerHTML = '';
+  }
+
+  if (!msg) return;
+
+  stopGeneration();
+
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('char-count').textContent = '0';
+  input.disabled = true;
+
+  btn.textContent = '停止';
+  btn.className = 'btn-send btn-stop';
+  btn.onclick = stopGeneration;
+  btn.disabled = false;
+
+  state.chatHistory.push({ role: 'user', content: msg });
+  const msgs = document.getElementById('chat-msgs');
+  if (msgs.querySelector('.empty-state')) msgs.innerHTML = '';
+  const displayMsg = msg.length > 3000 ? msg.slice(0, 500) + '\n\n... (含文件内容，共 ' + msg.length + ' 字符)' : msg;
+  msgs.innerHTML += `<div class="chat-msg user"><div class="msg-content">${esc(displayMsg)}</div></div>`;
+
+  const turnDiv = document.createElement('div');
+  turnDiv.className = 'chat-turn';
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'chat-msg assistant';
+  msgDiv.innerHTML = '<div class="msg-header">HEIMDALL</div><div class="msg-content"><span class="spinner"></span> 思考中...</div>';
+  turnDiv.appendChild(msgDiv);
+  msgs.appendChild(turnDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const controller = new AbortController();
+  _abortController = controller;
+
+  fetch(API+'/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg }),
+    signal: controller.signal,
+  }).then(async resp => {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let firstChunk = true;
+    let fullResponse = '';
+    let reasoning = '';
+    let msgContent = msgDiv.querySelector('.msg-content');
+
+    while (true) {
+      let done, value;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (e) {
+        break;
+      }
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.type === 'delta') {
+            if (firstChunk) { msgContent.innerHTML = ''; firstChunk = false; }
+            msgContent.textContent += data.text;
+            fullResponse += data.text;
+            msgs.scrollTop = msgs.scrollHeight;
+          } else if (data.type === 'done') {
+            if (firstChunk) { msgContent.innerHTML = '(no response)'; firstChunk = false; }
+            if (data.input_tokens || data.output_tokens) {
+              updateContextBar(data.input_tokens, data.output_tokens);
+            }
+            reasoning = data.reasoning || '';
+            let footerHtml = '';
+            if (data.input_tokens || data.output_tokens) {
+              footerHtml += `<span title="输入 ${data.input_tokens} / 输出 ${data.output_tokens}">in:${(data.input_tokens||0).toLocaleString()} out:${(data.output_tokens||0).toLocaleString()}</span>`;
+              if (data.model) footerHtml += `<span>${data.model}</span>`;
+            }
+            if (reasoning) {
+              footerHtml += `<span class="reasoning-toggle" onclick="this.parentElement.parentElement.querySelector('.msg-reasoning').classList.toggle('open')">推理</span>`;
+            }
+            if (footerHtml) {
+              msgDiv.innerHTML += `<div class="msg-footer">${footerHtml}</div>`;
+            }
+            if (reasoning) {
+              msgDiv.innerHTML += `<div class="msg-reasoning">${esc(reasoning)}</div>`;
+            }
+            const entry = { role: 'assistant', content: fullResponse };
+            if (reasoning) entry.reasoning = reasoning;
+            if (data.input_tokens) entry.input_tokens = data.input_tokens;
+            if (data.output_tokens) entry.output_tokens = data.output_tokens;
+            state.chatHistory.push(entry);
+            _addSpeakButtonToMessage(msgDiv, fullResponse);
+            if (_speakEnabled) speakText(fullResponse);
+          } else if (data.type === 'error') {
+            msgContent.innerHTML = '<span style="color:var(--red)">Error: ' + esc(data.text) + '</span>';
+          }
+        } catch (e) {}
+      }
+    }
+    _restoreSendButton();
+    formatAssistantMessage(msgDiv);
+    setTimeout(() => { refreshData(); loadSessionMemories(); buildKnowledgeCardForLastReply(); }, 1500);
+  }).catch(e => {
+    if (e.name === 'AbortError') {
+      if (msgDiv.querySelector('.msg-content').textContent.trim() === '思考中...') {
+        msgDiv.querySelector('.msg-content').innerHTML = '<span style="color:var(--text-muted)">(已取消)</span>';
+      } else {
+        msgDiv.querySelector('.msg-content').textContent += '\n\n(已取消)';
+      }
+    } else {
+      msgDiv.querySelector('.msg-content').innerHTML = '<span style="color:var(--red)">Network error</span>';
+    }
+    _restoreSendButton();
+  });
+}
+
+function _restoreSendButton() {
+  _abortController = null;
+  const input = document.getElementById('chat-input');
+  const btn = document.getElementById('send-btn');
+  input.disabled = false;
+  btn.textContent = '发送';
+  btn.className = 'btn-send';
+  btn.onclick = sendMessage;
+  btn.disabled = false;
+  input.focus();
+}
+
+function formatText(text) {
+  if (!text || !text.trim()) return esc(text||'');
+  const listRe = /^(\d+[\.\)、]\s|[-•]\s|[*]\s)/;
+  const rawParagraphs = text.split(/\n\n+/);
+  const processed = rawParagraphs.map(p => p.trim()).filter(p => p).map(p => {
+    if (p.includes('\n')) {
+      const lines = p.split('\n');
+      const isList = lines.length >= 2 && lines.every(l => !l.trim() || listRe.test(l.trim()));
+      if (isList) {
+        return '<ul style="margin:0 0 12px;padding-left:20px">'
+          + lines.filter(l => l.trim()).map(l => '<li style="margin-bottom:4px;font-size:13px">' + esc(l.trim().replace(listRe, '')) + '</li>').join('')
+          + '</ul>';
+      }
+      return '<p style="margin:0 0 12px">' + esc(p).replace(/\n/g, '<br>') + '</p>';
+    }
+    // Always split into sentences (Chinese + English punctuation)
+    const sentences = p.split(/(?<=[。！？.!?])(?=\S)/);
+    if (sentences.length <= 2) {
+      return '<p style="margin:0 0 12px">' + esc(p) + '</p>';
+    }
+    // Group into paragraphs: 2-4 sentences or ~120-180 chars
+    const chunks = [];
+    let cur = '';
+    let curSentences = 0;
+    for (let i = 0; i < sentences.length; i++) {
+      cur += sentences[i];
+      curSentences++;
+      const shouldBreak = curSentences >= 4 || (cur.length >= 150 && curSentences >= 2);
+      if (shouldBreak || i === sentences.length - 1) {
+        chunks.push(cur.trim());
+        cur = '';
+        curSentences = 0;
+      }
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+    return chunks.map(c => '<p style="margin:0 0 12px">' + esc(c) + '</p>').join('');
+  });
+  var result = processed.join('');
+  // Fallback: if no formatting was applied (result is just escaped text without tags), wrap in paragraphs
+  if (result.indexOf('<p') === -1 && result.indexOf('<ul') === -1 && result.indexOf('<br') === -1) {
+    result = '<p style="margin:0 0 12px">' + result + '</p>';
+  }
+  return result;
+}
+
+function formatAssistantMessage(msgDiv) {
+  const content = msgDiv.querySelector('.msg-content');
+  if (!content) return;
+  const text = content.textContent || '';
+  if (!text.trim()) return;
+  content.innerHTML = formatText(text);
+}
+
+// =========================================================================
+// File upload — supports multi-file via file input
+// =========================================================================
+let _fileContent = '';
+
+async function handleFileSelect(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  const textFiles = files.filter(f => {
+    const ext = '.' + (f.name || '').split('.').pop().toLowerCase();
+    return ['.txt','.md','.json','.yaml','.yml','.py','.log','.csv','.pdf','.doc','.docx','.html','.htm','.xml','.css','.js','.ts','.jsx','.tsx','.toml','.cfg','.ini','.sh','.bat'].includes(ext);
+  });
+  if (!textFiles.length) { event.target.value = ''; return; }
+  textFiles.forEach(f => addFileChip(f));
+  await processFileBatch(textFiles);
+  event.target.value = '';
+}
+
+function sendFileAsMessage() {
+  if (!_fileContent) return;
+  document.getElementById('chat-input').value = _fileContent;
+  closeFilePreview();
+  sendMessage();
+}
+
+function closeFilePreview() {
+  document.getElementById('file-preview-overlay').classList.remove('open');
+}
+
+// =========================================================================
+// Voice input — record audio, send to backend for transcription
+// =========================================================================
+let _mediaRecorder = null;
+let _audioChunks = [];
+let _recording = false;
+
+async function toggleMic() {
+  if (_recording) { await stopRecording(); } else { await startRecording(); }
+}
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
+    _audioChunks = [];
+    _mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) _audioChunks.push(e.data); };
+    _mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (_audioChunks.length > 0) {
+        const blob = new Blob(_audioChunks, { type: _mediaRecorder.mimeType });
+        sendVoiceMessage(blob);
+      }
+    };
+    _mediaRecorder.start();
+    _recording = true;
+    document.getElementById('mic-btn').classList.add('recording');
+    document.getElementById('mic-btn').textContent = '停止';
+  } catch (e) {
+    console.error('Failed to start recording:', e);
+    if (e.name === 'NotAllowedError') alert('请允许麦克风权限后重试');
+    else alert('无法访问麦克风: ' + e.message);
+  }
+}
+
+async function stopRecording() {
+  _recording = false;
+  document.getElementById('mic-btn').classList.remove('recording');
+  document.getElementById('mic-btn').textContent = '录音';
+  if (_mediaRecorder && _mediaRecorder.state !== 'inactive') {
+    _mediaRecorder.stop();
+  }
+}
+
+async function sendVoiceMessage(audioBlob) {
+  const msgs = document.getElementById('chat-msgs');
+  if (msgs.querySelector('.empty-state')) msgs.innerHTML = '';
+
+  const btn = document.getElementById('send-btn');
+  btn.textContent = '停止';
+  btn.className = 'btn-send btn-stop';
+  btn.onclick = stopGeneration;
+  btn.disabled = false;
+
+  const audioUrl = URL.createObjectURL(audioBlob);
+  const voiceDiv = document.createElement('div');
+  voiceDiv.className = 'chat-msg user';
+  voiceDiv.style.cssText = 'background:linear-gradient(135deg,var(--accent),#7c3aed);color:#fff;margin-left:24px;margin-bottom:4px;';
+  voiceDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span>语音消息</span> <audio controls style="height:28px;max-width:200px"><source src="' + audioUrl + '" type="' + (audioBlob.type || 'audio/webm') + '"></audio></div>';
+  msgs.appendChild(voiceDiv);
+
+  const turnDiv = document.createElement('div');
+  turnDiv.className = 'chat-turn';
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'chat-msg assistant';
+  msgDiv.innerHTML = '<div class="msg-header">HEIMDALL</div><div class="msg-content"><span class="spinner"></span> 识别语音中...</div>';
+  turnDiv.appendChild(msgDiv);
+  msgs.appendChild(turnDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'recording.' + (audioBlob.type.includes('webm') ? 'webm' : 'mp3'));
+
+  const controller = new AbortController();
+  _abortController = controller;
+
+  try {
+    const resp = await fetch(API + '/api/chat/voice', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let firstChunk = true;
+    let fullResponse = '';
+    let reasoning = '';
+    let msgContent = msgDiv.querySelector('.msg-content');
+
+    while (true) {
+      let done, value;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (e) {
+        break;
+      }
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.type === 'voice_transcription') {
+            voiceDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span>语音消息</span> <audio controls style="height:28px;max-width:200px"><source src="' + audioUrl + '" type="' + (data.audio_mime || 'audio/webm') + '"></audio></div><div style="font-size:12px;opacity:0.85">' + esc(data.text) + '</div>';
+            msgContent.innerHTML = '<span class="spinner"></span> 思考中...';
+          } else if (data.type === 'delta') {
+            if (firstChunk) { msgContent.innerHTML = ''; firstChunk = false; }
+            msgContent.textContent += data.text;
+            fullResponse += data.text;
+            msgs.scrollTop = msgs.scrollHeight;
+          } else if (data.type === 'done') {
+            if (firstChunk) { msgContent.innerHTML = '(no response)'; firstChunk = false; }
+            if (data.input_tokens || data.output_tokens) {
+              updateContextBar(data.input_tokens, data.output_tokens);
+            }
+            reasoning = data.reasoning || '';
+            let footerHtml = '';
+            if (data.input_tokens || data.output_tokens) {
+              footerHtml += '<span title="输入 ' + data.input_tokens + ' / 输出 ' + data.output_tokens + '">in:' + (data.input_tokens||0).toLocaleString() + ' out:' + (data.output_tokens||0).toLocaleString() + '</span>';
+              if (data.model) footerHtml += '<span>' + data.model + '</span>';
+            }
+            if (reasoning) {
+              footerHtml += '<span class="reasoning-toggle" onclick="this.parentElement.parentElement.querySelector(\'.msg-reasoning\').classList.toggle(\'open\')">推理</span>';
+            }
+            if (footerHtml) {
+              msgDiv.innerHTML += '<div class="msg-footer">' + footerHtml + '</div>';
+            }
+            if (reasoning) {
+              msgDiv.innerHTML += '<div class="msg-reasoning">' + esc(reasoning) + '</div>';
+            }
+            const entry = { role: 'assistant', content: fullResponse };
+            if (reasoning) entry.reasoning = reasoning;
+            if (data.input_tokens) entry.input_tokens = data.input_tokens;
+            if (data.output_tokens) entry.output_tokens = data.output_tokens;
+            state.chatHistory.push({ role: 'user', content: '[语音消息]' });
+            state.chatHistory.push(entry);
+            _addSpeakButtonToMessage(msgDiv, fullResponse);
+            if (_speakEnabled) speakText(fullResponse);
+          } else if (data.type === 'error') {
+            msgContent.innerHTML = '<span style="color:var(--red)">Error: ' + esc(data.text) + '</span>';
+          }
+        } catch (e) {}
+      }
+    }
+    _restoreSendButton();
+    formatAssistantMessage(msgDiv);
+    setTimeout(() => { refreshData(); loadSessionMemories(); buildKnowledgeCardForLastReply(); }, 1500);
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      const txt = msgDiv.querySelector('.msg-content').textContent.trim();
+      if (txt === '识别语音中...' || txt === '思考中...') {
+        msgDiv.querySelector('.msg-content').innerHTML = '<span style="color:var(--text-muted)">(已取消)</span>';
+      } else {
+        msgDiv.querySelector('.msg-content').textContent += '\n\n(已取消)';
+      }
+    } else {
+      msgDiv.querySelector('.msg-content').innerHTML = '<span style="color:var(--red)">语音消息发送失败: ' + esc(e.message) + '</span>';
+    }
+    _restoreSendButton();
+  }
+  document.getElementById('mic-btn').textContent = '录音';
+}
+
+// =========================================================================
+// Voice output (Text-to-Speech via Web Speech API)
+// =========================================================================
+let _speakEnabled = false;
+let _speaking = false;
+
+function toggleSpeak() {
+  _speakEnabled = !_speakEnabled;
+  const btn = document.getElementById('speak-btn');
+  if (_speakEnabled) {
+    btn.classList.add('active');
+    btn.textContent = '朗读:开';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '朗读';
+  }
+}
+
+function speakText(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'zh-CN';
+  utter.rate = 1.0;
+  utter.pitch = 1.0;
+  const voices = window.speechSynthesis.getVoices();
+  const zhVoice = voices.find(v => v.lang.startsWith('zh')) || voices.find(v => v.lang.startsWith('zh-CN'));
+  if (zhVoice) utter.voice = zhVoice;
+  _speaking = true;
+  document.getElementById('speak-btn').classList.add('speaking');
+  utter.onend = utter.onerror = () => {
+    _speaking = false;
+    document.getElementById('speak-btn').classList.remove('speaking');
+  };
+  window.speechSynthesis.speak(utter);
+}
+
+function _addSpeakButtonToMessage(msgDiv, text) {
+  const footer = msgDiv.querySelector('.msg-footer');
+  const btn = document.createElement('span');
+  btn.style.cssText = 'cursor:pointer;color:var(--text-muted);font-size:10px;margin-left:4px';
+  btn.textContent = '朗读';
+  btn.title = '朗读此消息';
+  btn.onclick = (e) => { e.stopPropagation(); speakText(text); };
+  if (footer) {
+    footer.appendChild(btn);
+  } else {
+    const f = document.createElement('div');
+    f.className = 'msg-footer';
+    f.appendChild(btn);
+    msgDiv.appendChild(f);
+  }
+}
+
+// =========================================================================
+// Tab: 历史 (History) — memory timeline
+// =========================================================================
+function buildHistoryTab(main) {
+  main.innerHTML = `<div class="panel" id="history-panel" style="overflow-y:auto;flex:1">
+    <div class="timeline-filter">
+      <input id="hist-search" placeholder="搜索记忆..." oninput="filterHistory()">
+      <select id="hist-type" onchange="filterHistory()">
+        <option value="">全部类型</option>
+        <option value="person">人物</option><option value="project">项目</option>
+        <option value="concept">概念</option><option value="skill">技能</option>
+        <option value="tool">工具</option><option value="organization">组织</option>
+        <option value="event">事件</option>
+      </select>
+      <select id="hist-emotion" onchange="filterHistory()">
+        <option value="">全部情绪</option>
+        <option value="positive">正面</option><option value="neutral">中性</option><option value="negative">负面</option>
+      </select>
+    </div>
+    <div id="timeline-area"><div class="empty-state"><div class="empty-icon">:-)</div><p>聊得越多，你的时间线越丰富</p></div></div>
+    <div id="ltm-area" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px"></div>
+  </div>`;
+  filterHistory();
+  loadLongTermMemories();
+}
+
+async function filterHistory() {
+  const area = document.getElementById('timeline-area');
+  const search = document.getElementById('hist-search')?.value || '';
+  const etype = document.getElementById('hist-type')?.value || '';
+  const emotion = document.getElementById('hist-emotion')?.value || '';
+
+  let url = API+'/api/memories/recent?limit=100';
+  if (search) url += '&search=' + encodeURIComponent(search);
+  try {
+    const resp = await fetch(url).then(r=>r.json());
+    let edges = resp.edges || [];
+    if (etype) edges = edges.filter(e => {
+      const ent = state.entities.find(x => x.entity_id === e.entity_id);
+      return ent && ent.entity_type === etype;
+    });
+    if (emotion === 'positive') edges = edges.filter(e => (e.emotion||0) > 0.3);
+    else if (emotion === 'negative') edges = edges.filter(e => (e.emotion||0) < -0.3);
+    else if (emotion === 'neutral') edges = edges.filter(e => (e.emotion||0) >= -0.3 && (e.emotion||0) <= 0.3);
+
+    if (!edges.length) {
+      area.innerHTML = '<div class="empty-state"><div class="empty-icon">:-)</div><p>没有匹配的记忆</p></div>';
+      return;
+    }
+
+    const groups = {};
+    edges.forEach(e => {
+      const date = new Date((e.timestamp||0)*1000).toLocaleDateString('zh-CN', {month:'long',day:'numeric',weekday:'short'});
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(e);
+    });
+
+    let html = '<div class="timeline">';
+    for (const [date, items] of Object.entries(groups)) {
+      html += `<div class="timeline-date">${date}</div>`;
+      items.forEach(e => {
+        const time = new Date((e.timestamp||0)*1000).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+        const emo = (e.emotion||0) > 0.3 ? ':-)' : (e.emotion||0) < -0.3 ? ':-(' : ':-|';
+        html += `<div class="timeline-item" onclick="showEntityDetail('${e.entity_id}')">
+          <span class="ti-name">${esc(e.entity_name||'?')}</span>
+          <span class="badge badge-${e.role||'context'}" style="margin-left:6px">${e.role||'context'}</span>
+          <span style="margin-left:6px">${emo}</span>
+          <span class="ti-time" style="float:right">${time}</span>
+        </div>`;
+      });
+    }
+    html += '</div>';
+    area.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function loadLongTermMemories(page = 0) {
+  const area = document.getElementById('ltm-area');
+  const search = document.getElementById('hist-search')?.value || '';
+  const etype = document.getElementById('hist-type')?.value || '';
+  const emotion = document.getElementById('hist-emotion')?.value || '';
+  const limit = 20;
+
+  let url = `${API}/api/memories/long-term?limit=${limit}&offset=${page*limit}`;
+  if (search) url += '&search=' + encodeURIComponent(search);
+  if (etype) url += '&entity_type=' + etype;
+  if (emotion) url += '&emotion=' + emotion;
+
+  try {
+    const resp = await fetch(url).then(r=>r.json());
+    const edges = resp.edges || [];
+    const total = resp.total || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    if (!edges.length && page === 0) {
+      area.innerHTML = '<div class="card"><h4>长期记忆浏览器</h4><p class="empty-state" style="padding:12px;font-size:12px">暂无其他会话的记忆数据</p></div>';
+      return;
+    }
+
+    let html = `<div class="card"><h4>长期记忆浏览器 <span style="font-size:11px;color:var(--text-muted)">(${total} 条)</span></h4>`;
+    html += '<table class="data-table"><tr><th>时间</th><th>实体</th><th>类型</th><th>角色</th><th>情绪</th></tr>';
+    edges.forEach(e => {
+      const dt = new Date((e.timestamp||0)*1000).toLocaleString('zh-CN', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      const emo = (e.emotion||0) > 0.3 ? ':-)' : (e.emotion||0) < -0.3 ? ':-(' : ':-|';
+      html += `<tr onclick="showEntityDetail('${e.entity_id}')" style="cursor:pointer">
+        <td style="font-size:11px">${dt}</td>
+        <td>${esc(e.entity_name||'?')}</td>
+        <td><span class="badge badge-${e.entity_type||'concept'}">${e.entity_type||'?'}</span></td>
+        <td>${e.role||''}</td>
+        <td>${emo}</td>
+      </tr>`;
+    });
+    html += '</table>';
+
+    if (totalPages > 1) {
+      html += `<div class="timeline-pager">
+        <button onclick="loadLongTermMemories(${page-1})" ${page<=0?'disabled':''}>上一页</button>
+        <span style="font-size:11px;color:var(--text-muted);line-height:30px">${page+1} / ${totalPages}</span>
+        <button onclick="loadLongTermMemories(${page+1})" ${page>=totalPages-1?'disabled':''}>下一页</button>
+      </div>`;
+    }
+    html += '</div>';
+    area.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+// =========================================================================
+// Tab: 分组 (Groups) — communities + graph + entity list
+// =========================================================================
+function buildGroupsTab(main) {
+  main.innerHTML = `
+    <div class="panel panel-left" style="flex:0 0 380px; overflow-y:auto">
+      <div class="graph-toolbar" style="display:flex;gap:6px">
+        <input id="entity-search" placeholder="搜索实体..." onkeyup="filterEntities()" style="flex:1">
+        <button onclick="triggerCommunityDetection()" title="检测社区分组" style="white-space:nowrap;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted);cursor:pointer;font-size:12px;transition:all 0.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">社区检测</button>
+      </div>
+      <div id="community-list" style="margin-bottom:8px"></div>
+      <div id="entity-list"></div>
+    </div>
+    <div class="panel panel-right">
+      <div id="graph-container"></div>
+      <div id="detail-panel" class="detail-panel"></div>
+    </div>`;
+  loadCommunityList();
+  renderEntityList();
+  renderGraph();
+}
+
+// Community list & detection
+async function loadCommunityList() {
+  const container = document.getElementById('community-list');
+  if (!container) return;
+  try {
+    const resp = await fetch(API+'/api/communities').then(r=>r.json());
+    const communities = resp.communities || [];
+    const bridges = resp.bridges || [];
+    const coldStartMet = resp.cold_start_met;
+
+    if (!communities.length) {
+      const msg = coldStartMet
+        ? '已拥有足够的记忆，运行社区检测以自动归类'
+        : '聊得越多，你的记忆会自动归类';
+      container.innerHTML = `<div class="empty-state" style="padding:8px;margin:4px 0;font-size:12px"><p>${msg}</p></div>`;
+      return;
+    }
+
+    let html = '';
+    communities.forEach(c => {
+      html += `<details class="community-card" style="margin:2px 0;background:var(--surface);border-radius:8px;padding:4px 8px">
+        <summary style="cursor:pointer;font-weight:600;font-size:13px;color:var(--amber)">
+          ${c.emoji} ${c.label} <span style="color:var(--text-muted);font-weight:400">(${c.size} 实体)</span>
+        </summary>
+        <div style="font-size:11px;max-height:120px;overflow-y:auto">`;
+      (c.entities||[]).forEach(e => {
+        html += `<span style="display:inline-block;margin:2px;padding:1px 6px;background:var(--bg-deep);border-radius:4px;cursor:pointer" onclick="showEntityDetail('${e.entity_id}')" title="${esc(e.display_name||'')} — ${e.entity_type}">${esc((e.display_name||'?').substring(0, 12))} ${e.is_bridge?'[桥]':''}</span>`;
+      });
+      html += '</div></details>';
+    });
+    container.innerHTML = html;
+  } catch (e) { console.error(e); }
+}
+
+async function triggerCommunityDetection() {
+  const container = document.getElementById('community-list');
+  if (container) container.innerHTML = '<div class="empty-state" style="padding:8px;font-size:12px"><p>正在分析实体关系，构建社区...</p></div>';
+  try {
+    const resp = await fetch(API+'/api/communities/detect', { method: 'POST' }).then(r=>r.json());
+    const stats = resp.stats || {};
+    await loadCommunityList();
+    await loadAll();
+    renderEntityList();
+    renderGraph();
+  } catch (e) {
+    console.error(e);
+    if (container) container.innerHTML = '<div class="empty-state" style="padding:8px;font-size:12px;color:var(--red)"><p>社区检测失败</p></div>';
+  }
+}
+
+function renderEntityList(filter = '') {
+  const list = document.getElementById('entity-list');
+  if (!list) return;
+  let entities = state.entities;
+  if (filter) {
+    const q = filter.toLowerCase();
+    entities = entities.filter(e => (e.display_name||'').toLowerCase().includes(q));
+  }
+
+  if (!entities.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">:-)</div><p>当你拥有足够多的记忆后（至少5条），它们会自动归类</p></div>';
+    return;
+  }
+
+  let html = '<table class="data-table"><tr><th>名称</th><th>类型</th><th>次数</th></tr>';
+  entities.forEach(e => {
+    html += `<tr onclick="showEntityDetail('${e.entity_id}')" style="cursor:pointer">
+      <td>${esc(e.display_name||'?')} ${e.is_bridge?'<span class="badge badge-bridge">桥</span>':''}</td>
+      <td><span class="badge badge-${e.entity_type||'concept'}">${e.entity_type||'?'}</span></td>
+      <td>${e.occurrence_count||0}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  list.innerHTML = html;
+}
+
+function filterEntities() {
+  const q = document.getElementById('entity-search')?.value || '';
+  renderEntityList(q);
+}
+
+async function renderGraph(entityId = '') {
+  const container = document.getElementById('graph-container');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state"><div class="empty-icon">:-)</div><p>正在构建知识图谱...</p></div>';
+
+  try {
+    let nodes = [], edges = [];
+    const nodeMap = {};
+
+    state.entities.slice(0, 50).forEach(e => {
+      const n = entityToNode(e);
+      nodes.push(n);
+      nodeMap[e.entity_id] = true;
+    });
+
+    const topEntities = state.entities.slice(0, 10);
+    for (const e of topEntities) {
+      try {
+        const resp = await fetch(API+'/api/entities/'+e.entity_id+'/graph').then(r=>r.json());
+        resp.nodes.forEach(n => {
+          if (!nodeMap[n.id]) { nodes.push(n); nodeMap[n.id] = true; }
+        });
+        edges.push(...resp.edges);
+      } catch (err) {}
+    }
+
+    container.innerHTML = '';
+
+    const W = container.clientWidth || 700;
+    const H = container.clientHeight || 500;
+    const cx = W / 2, cy = H / 2;
+
+    const centerNode = entityId ? nodes.find(n => n.id === entityId) : null;
+    const primaryNodes = nodes.filter(n => n.id !== entityId && !n.id.startsWith('k_'));
+    const knowledgeNodes = nodes.filter(n => n.id.startsWith('k_'));
+
+    const innerRing = primaryNodes.slice(0, 16);
+    const outerRing = primaryNodes.slice(16);
+
+    if (centerNode) {
+      centerNode.x = cx;
+      centerNode.y = cy;
+      centerNode.fixed = { x: true, y: true };
+    }
+
+    const innerR = Math.min(W, H) * 0.14;
+    innerRing.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / innerRing.length - Math.PI / 2;
+      n.x = cx + innerR * Math.cos(angle);
+      n.y = cy + innerR * Math.sin(angle);
+    });
+
+    const outerR = Math.min(W, H) * 0.21;
+    outerRing.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(outerRing.length, 1) - Math.PI / 2;
+      n.x = cx + outerR * Math.cos(angle);
+      n.y = cy + outerR * Math.sin(angle);
+    });
+
+    knowledgeNodes.forEach((n, i) => {
+      const kr = Math.min(W, H) * (0.18 + 0.04 * Math.random());
+      const angle = (2 * Math.PI * i) / Math.max(knowledgeNodes.length, 1) - Math.PI / 2;
+      n.x = cx + kr * Math.cos(angle);
+      n.y = cy + kr * Math.sin(angle);
+    });
+
+    const legend = document.createElement('div');
+    legend.className = 'graph-legend';
+    legend.innerHTML = `<b>图例</b>
+      <div class="legend-row"><span class="legend-node" style="background:#e07a5f"></span> 人物</div>
+      <div class="legend-row"><span class="legend-node" style="background:#667bc0"></span> 项目</div>
+      <div class="legend-row"><span class="legend-node" style="background:#b08abb"></span> 技能</div>
+      <div class="legend-row"><span class="legend-node" style="background:#d4a76a"></span> 概念</div>
+      <div class="legend-row"><span class="legend-node square" style="background:#3b82f6"></span> 知识条目</div>
+      <div class="legend-row"><span class="legend-node diamond" style="background:#ec4899;width:8px;height:8px"></span> 桥接节点</div>
+      <div class="legend-row" style="margin-top:4px"><span class="legend-line"></span> 社交边（实线）</div>
+      <div class="legend-row"><span class="legend-line dashed"></span> 知识边（虚线）</div>
+      <div class="legend-row"><span class="legend-line dotted"></span> 记忆边（点线）</div>
+      <div class="legend-row" style="margin-top:4px;font-size:10px;color:var(--text-muted)">环形分布 | 社区检测后按社区着色</div>`;
+    container.appendChild(legend);
+
+    const visNodes = new vis.DataSet(nodes);
+    const visEdges = new vis.DataSet(edges);
+
+    const memEdges = edges.filter(e => e.edge_type === 'memory').length;
+    const socEdges = edges.filter(e => e.edge_type === 'social').length;
+    const kwEdges = edges.filter(e => e.edge_type === 'knowledge').length;
+    const edgeInfo = memEdges + socEdges + kwEdges > 0
+      ? ` | ${socEdges}条社交 · ${memEdges}条记忆 · ${kwEdges}条知识`
+      : ' | 暂无关系边 — 发送消息后提取实体关系';
+
+    const infoEl = document.createElement('div');
+    infoEl.style.cssText = 'position:absolute;top:4px;right:8px;font-size:10px;color:var(--text-muted);z-index:5;';
+    infoEl.textContent = `${nodes.length}个节点${edgeInfo}`;
+    container.appendChild(infoEl);
+
+    const network = new vis.Network(container, { nodes: visNodes, edges: visEdges }, {
+      nodes: { shape: 'dot', size: 12, font: { size: 11, color: '#ffffff', strokeWidth: 0, face: 'sans-serif' }, scaling: { label: { enabled: false } } },
+      edges: {
+        smooth: { type: 'continuous', roundness: 0.5 },
+        width: 0.05,
+        scaling: { min: 0.3, max: 1 },
+        dashes: false,
+        color: { opacity: 0.4 },
+        font: { size: 11, color: '#ffffff', strokeWidth: 0, face: 'sans-serif', align: 'middle' },
+      },
+      physics: {
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: {
+          gravitationalConstant: -30,
+          centralGravity: 0.008,
+          springLength: 100,
+          springConstant: 0.03,
+          damping: 0.5,
+        },
+        minVelocity: 0.25,
+        maxVelocity: 10,
+        stabilization: { iterations: 150, fit: false },
+      },
+      interaction: { hover: true, tooltipDelay: 100 },
+    });
+
+    network.on('doubleClick', (params) => {
+      if (params.nodes.length > 0) {
+        const nid = params.nodes[0];
+        if (nid && !String(nid).startsWith('k_')) {
+          showEntityDetail(nid);
+        }
+      }
+    });
+
+  } catch (e) { console.error(e); }
+}
+
+function entityToNode(e) {
+  const colors = {
+    person:       { background: '#e07a5f', border: '#c0624a', highlight: { background: '#f08a6f', border: '#d0725a' } },
+    organization: { background: '#5e8c7e', border: '#4a7265', highlight: { background: '#6e9c8e', border: '#5a8275' } },
+    project:      { background: '#667bc0', border: '#5065a8', highlight: { background: '#768bd0', border: '#6075b8' } },
+    tool:         { background: '#7d9f6e', border: '#658556', highlight: { background: '#8daf7e', border: '#759566' } },
+    concept:      { background: '#d4a76a', border: '#bc8f52', highlight: { background: '#e4b77a', border: '#cc9f62' } },
+    skill:        { background: '#b08abb', border: '#9670a3', highlight: { background: '#c09acb', border: '#a680b3' } },
+    event:        { background: '#6dacb5', border: '#55909a', highlight: { background: '#7dbcc5', border: '#65a0aa' } },
+    location:     { background: '#d4956b', border: '#bc7d53', highlight: { background: '#e4a57b', border: '#cc8d63' } },
+    media:        { background: '#a089b5', border: '#86709d', highlight: { background: '#b099c5', border: '#9680ad' } },
+  };
+  const communityPalette = [
+    '#667bc0', '#b08abb', '#e07a5f', '#d4956b', '#5e8c7e',
+    '#d4a76a', '#6dacb5', '#7d9f6e', '#c47e8b', '#6b9eac',
+    '#c0a060', '#9b7eb8',
+  ];
+
+  const etype = e.entity_type || 'concept';
+  const palette = colors[etype] || { background: '#a09988', border: '#888070', highlight: { background: '#b0a998', border: '#989080' } };
+  let node = {
+    id: e.entity_id,
+    label: (e.display_name||'?').substring(0, 15),
+    group: etype,
+    color: palette,
+    title: `${e.display_name||'?'}\ntype: ${etype}\nseen: ${e.occurrence_count||0}x`,
+  };
+  const cid = e.community_id;
+  if (cid !== null && cid !== undefined && cid >= 0) {
+    const bg = communityPalette[cid % communityPalette.length];
+    node.color = { background: bg, border: bg, highlight: { background: bg, border: bg } };
+    if (e.community_label) {
+      node.title += `\ncommunity: ${e.community_label}`;
+    }
+  }
+  if (e.is_bridge) {
+    node.shape = 'diamond';
+    node.borderWidth = 3;
+    node.color = node.color || {};
+    node.color.border = '#ec4899';
+  }
+  if (e.shape) node.shape = e.shape;
+  if (e.borderWidth) node.borderWidth = e.borderWidth;
+  if (typeof e.color === 'object' && e.color.background) node.color = e.color;
+  return node;
+}
+
+async function showEntityDetail(id) {
+  const panel = document.getElementById('detail-panel');
+  if (!panel) return;
+  try {
+    const resp = await fetch(API+'/api/entities/'+id).then(r=>r.json());
+    const e = resp.entity;
+    const conns = resp.connections || [];
+    let html = `<button class="close-btn" onclick="this.parentElement.classList.remove('open')">x</button>
+      <h3>${esc(e.display_name||'?')}</h3>
+      <p style="color:var(--text-muted)">type: ${e.entity_type} | seen: ${e.occurrence_count||0}x | confidence: ${((e.confidence||0)*100).toFixed(0)}%</p>`;
+    html += `<p style="color:var(--text-muted);font-size:11px">
+      PageRank: ${(e.pagerank||1).toFixed(3)}
+      ${e.pagerank_error>0.2?'<span style="color:#e74c3c" title="误差超阈值，需云端同步"> 误差:'+e.pagerank_error.toFixed(3)+'</span>':''}
+    </p>`;
+    if (e.community_id !== null && e.community_id !== undefined && e.community_id >= 0) {
+      html += `<p style="font-size:11px;color:var(--amber)">社区 #${e.community_id} | 置信度: ${((e.community_confidence||1)*100).toFixed(0)}%</p>`;
+    }
+    if (e.is_bridge) html += '<p><span class="badge badge-bridge">桥接节点</span> score: '+(e.bridge_score||0).toFixed(3)+'</p>';
+
+    if (conns.length) {
+      html += '<p style="margin-top:8px;font-weight:600">Connections:</p>';
+      conns.forEach(c => {
+        html += `<div style="margin:2px 0;font-size:11px">
+          → ${esc(c.target_name||c.target_entity_id||'?')}
+          <span style="color:var(--text-muted)">intensity:${(c.intensity||0).toFixed(1)} valence:${(c.valence||0).toFixed(2)}</span>
+        </div>`;
+      });
+    }
+    panel.innerHTML = html;
+    panel.classList.add('open');
+  } catch (e) { console.error(e); }
+}
+
+// =========================================================================
+// Tab: 在学的 (Learning) — skills + knowledge
+// =========================================================================
+function buildLearningTab(main) {
+  main.innerHTML = `
+    <div class="panel" style="overflow-y:auto;flex:1">
+      <div class="card"><h3>技能掌握度</h3><div id="skills-list"></div></div>
+      <div class="card"><h3>知识库</h3><div id="knowledge-list"></div></div>
+    </div>`;
+  renderSkills();
+  renderKnowledge();
+}
+
+function renderSkills() {
+  const div = document.getElementById('skills-list');
+  const skills = state.skills || [];
+  if (!skills.length) {
+    div.innerHTML = '<div class="empty-state"><p>随着你学习新东西，这里会记录你的成长</p></div>';
+    return;
+  }
+  const levels = ['不了解','了解','练习中','掌握','精通'];
+  let html = '';
+  skills.forEach(s => {
+    const idx = levels.indexOf(s.mastery_level);
+    html += `<div class="card" style="padding:10px;margin-bottom:6px" id="skill-card-${esc(s.id||s.skill_name)}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>${esc(s.skill_name||s.id)}</strong>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;color:var(--text-muted)">${s.mastery_level||'了解'}</span>
+          <button onclick="suggestSkillUpgrade('${esc(s.skill_name||s.id)}')" title="AI 升级建议" style="background:none;border:1px solid var(--border);color:var(--cyan);padding:2px 6px;border-radius:6px;cursor:pointer;font-size:10px">AI建议</button>
+        </div>
+      </div>
+      <div class="mastery-bar" style="margin-top:6px">
+        ${levels.map((l,i) => `<div class="dot${i<=idx?' active':''}" data-level="${l}" title="${l}" onclick="setMastery('${s.id}','${l}')"></div>`).join('')}
+      </div>
+      <div id="suggest-${esc(s.id||s.skill_name)}"></div>
+    </div>`;
+  });
+  html += `<button onclick="suggestSkillUpgrade('')" style="margin-top:8px;padding:8px 16px;border-radius:10px;border:1px solid var(--accent);background:var(--bg-card);color:var(--accent);cursor:pointer;font-size:12px;width:100%;transition:all 0.15s">分析全部技能</button>`;
+  div.innerHTML = html;
+}
+
+async function suggestSkillUpgrade(skillName) {
+  const targetId = skillName ? `suggest-${skillName}` : null;
+  if (targetId) {
+    const el = document.getElementById(targetId);
+    if (el) el.innerHTML = '<span class="spinner"></span> <span style="font-size:11px;color:var(--text-muted)">AI 分析中...</span>';
+  }
+  try {
+    const resp = await fetch(API+'/api/skills/suggest', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({skill_name: skillName}),
+    }).then(r=>r.json());
+    if (resp.suggestions && resp.suggestions.length > 0) {
+      resp.suggestions.forEach(sug => {
+        const el = document.getElementById(`suggest-${sug.skill_name}`);
+        if (el) {
+          el.innerHTML = `<div style="margin-top:6px;padding:6px 8px;background:#06b6d611;border-radius:8px;font-size:11px">
+            建议升级到 <b>${esc(sug.suggested_level)}</b> (置信度 ${Math.round((sug.confidence||0)*100)}%)
+            <br><span style="color:var(--text-muted)">${esc(sug.reason||'')}</span>
+          </div>`;
+        }
+      });
+      if (!skillName) {
+        resp.suggestions.forEach(sug => {
+          for (const sk of (state.skills||[])) {
+            if (sk.skill_name === sug.skill_name) {
+              const el = document.getElementById(`suggest-${sk.id||sk.skill_name}`);
+              if (el && !el.innerHTML.includes('建议升级到')) {
+                el.innerHTML = `<div style="margin-top:6px;padding:6px 8px;background:#06b6d611;border-radius:8px;font-size:11px">
+                  建议升级到 <b>${esc(sug.suggested_level)}</b> (置信度 ${Math.round((sug.confidence||0)*100)}%)
+                  <br><span style="color:var(--text-muted)">${esc(sug.reason||'')}</span>
+                </div>`;
+              }
+              break;
+            }
+          }
+        });
+      }
+    } else if (resp.error) {
+      if (targetId) {
+        const el = document.getElementById(targetId);
+        if (el) el.innerHTML = `<span style="font-size:11px;color:var(--red)">Error: ${esc(resp.error)}</span>`;
+      }
+    }
+  } catch(e) {
+    if (targetId) {
+      const el = document.getElementById(targetId);
+      if (el) el.innerHTML = '';
+    }
+  }
+}
+
+async function setMastery(id, level) {
+  try {
+    await fetch(API+'/api/skills/'+id+'/mastery', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({mastery_level: level}),
+    });
+    const resp = await fetch(API+'/api/skills').then(r=>r.json());
+    state.skills = resp.skills || [];
+    renderSkills();
+  } catch (e) { console.error(e); }
+}
+
+function renderKnowledge() {
+  const div = document.getElementById('knowledge-list');
+  const entries = state.knowledge || [];
+  if (!entries.length) {
+    div.innerHTML = '<div class="empty-state"><p>暂无知识条目，开始学习后这里会记录你的知识积累</p></div>';
+    return;
+  }
+  let html = '<table class="data-table"><tr><th>领域</th><th>标题</th><th>掌握</th><th>来源</th></tr>';
+  entries.slice(0, 20).forEach(e => {
+    html += `<tr>
+      <td>${esc(e.domain||'')}</td>
+      <td>${esc(e.title||e.content||'').substring(0,40)}</td>
+      <td>${e.mastery_level||'了解'}</td>
+      <td>${e.source_type||''}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  div.innerHTML = html;
+}
+
+// =========================================================================
+// Tab: 个人图谱 (Personal Knowledge Ring Graph)
+// =========================================================================
+let _ringData = null;
+let _ringSimulation = null;
+
+function buildPersonalGraphTab(main) {
+  main.innerHTML = `
+    <div style="display:flex;height:100%;width:100%;position:relative;overflow:hidden" id="ring-graph-container">
+      <svg id="ring-svg" style="width:100%;height:100%;position:absolute;inset:0"></svg>
+      <div style="position:absolute;top:8px;right:8px;z-index:10;display:flex;gap:6px">
+        <select id="ring-time-filter" onchange="filterRingGraph()" style="padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:11px">
+          <option value="all">全部时间</option>
+          <option value="today">今日</option>
+          <option value="week">本周</option>
+          <option value="month">本月</option>
+        </select>
+        <button onclick="refreshPersonalGraph()" style="padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:11px" title="刷新">刷新</button>
+        <button onclick="toggleRingPanel()" style="padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:11px" title="切换面板">面板</button>
+      </div>
+      <div id="ring-info-panel" style="position:absolute;left:8px;top:8px;width:240px;max-height:calc(100% - 16px);overflow-y:auto;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:#16161edd;backdrop-filter:blur(12px);font-size:11px;z-index:10">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h4 style="margin:0;font-size:12px">快速总览</h4>
+          <span onclick="this.parentElement.parentElement.style.display='none'" style="cursor:pointer;color:var(--text-muted);font-size:14px" title="关闭面板">x</span>
+        </div>
+        <div id="ring-overview">加载中...</div>
+        <h4 style="margin:10px 0 6px;font-size:11px">今日增长</h4>
+        <div id="ring-daily-growth">加载中...</div>
+        <div id="ring-entity-logic" style="margin:8px 0;padding:6px 8px;border-radius:8px;background:#1a1d2744;font-size:10px;color:var(--text-muted);line-height:1.5">
+          <b>实体来源：</b>对话中 LLM 提取的所有命名实体（人物/概念/事件/作品/工具），按类型着色分形，置信度决定大小，连线表示显式关系。
+        </div>
+        <h4 style="margin:10px 0 6px;font-size:11px">认知升降舱</h4>
+        <div id="ring-elevator">加载中...</div>
+        <h4 style="margin:10px 0 6px;font-size:11px">人格漂移</h4>
+        <div id="ring-drift">加载中...</div>
+        <h4 style="margin:10px 0 6px;font-size:11px">快捷操作</h4>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          <button onclick="switchToView('chat')" style="padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:10px">聊天</button>
+          <button onclick="switchToView('history')" style="padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:10px">历史</button>
+          <button onclick="switchToView('ring')" style="padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:10px">分组</button>
+          <button onclick="loadPersonalGraph()" style="padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:10px">刷新</button>
+        </div>
+      </div>
+      <div style="position:absolute;left:8px;bottom:8px;z-index:10;background:#16161edd;border:1px solid var(--border);border-radius:10px;padding:6px 8px;font-size:10px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:8px">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6c5ce7;vertical-align:middle;margin-right:2px"></span> 概念</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2dd4a0;vertical-align:middle;margin-right:2px"></span> 内容</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f6b83d;vertical-align:middle;margin-right:2px"></span> 人物</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f06565;vertical-align:middle;margin-right:2px"></span> 事件</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#9b8cf0;vertical-align:middle;margin-right:2px"></span> 作品</span>
+      </div>
+    </div>`;
+  loadPersonalGraph();
+}
+
+function switchToView(name) {
+  showView(name);
+}
+
+function toggleRingPanel() {
+  const panel = document.getElementById('ring-info-panel');
+  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadPersonalGraph() {
+  try {
+    const [ringResp, dailyResp, statsResp] = await Promise.all([
+      fetch(API+'/api/v1/ring').then(r=>r.json()).catch(() => null),
+      fetch(API+'/api/v1/daily-report').then(r=>r.json()).catch(() => null),
+      fetch(API+'/api/stats').then(r=>r.json()).catch(() => null),
+    ]);
+
+    _ringData = ringResp || {nodes:[],edges:[]};
+
+    const overview = document.getElementById('ring-overview');
+    if (overview) {
+      const nodes = _ringData.nodes || [];
+      const edges = _ringData.edges || [];
+      const domains = new Set();
+      nodes.forEach(n => {
+        try { const d = typeof n.domains === 'string' ? JSON.parse(n.domains) : (n.domains||[]); d.forEach(x => domains.add(x)); } catch(e){}
+      });
+      overview.innerHTML = `
+        <div style="font-size:18px;font-weight:700;color:var(--accent)">${nodes.length} 实体</div>
+        <div style="font-size:18px;font-weight:700;color:var(--green)">${edges.length} 关系</div>
+        <div style="font-size:14px;color:var(--text-muted)">${domains.size} 个知识领域</div>
+        ${dailyResp && dailyResp.streak ? `<div style="font-size:14px;color:var(--amber);margin-top:4px">连续活跃 ${dailyResp.streak} 天</div>` : ''}
+      `;
+    }
+
+    const growth = document.getElementById('ring-daily-growth');
+    if (growth && dailyResp) {
+      let growthHtml = '';
+      if (dailyResp.domain_growth && dailyResp.domain_growth.length) {
+        dailyResp.domain_growth.slice(0, 5).forEach(d => {
+          growthHtml += `<div style="margin:2px 0">${esc(d.domain)} +${d.count}实体</div>`;
+        });
+      } else {
+        growthHtml = '<div style="color:var(--text-muted);font-size:11px">暂无今日增长数据</div>';
+      }
+      if (dailyResp.new_domains && dailyResp.new_domains.length) {
+        dailyResp.new_domains.forEach(d => {
+          growthHtml += `<div style="margin:2px 0;color:var(--green)">NEW ${esc(d.domain)} 新增领域</div>`;
+        });
+      }
+      growth.innerHTML = growthHtml;
+    }
+
+    const elevator = document.getElementById('ring-elevator');
+    if (elevator) {
+      const stats = statsResp || {};
+      const el = stats.elevator || {};
+      elevator.innerHTML = `
+        <div>L1 稳定: ${el.L1||0} 实体</div>
+        <div>L2 浮动: ${el.L2||0} 实体</div>
+        <div style="color:var(--red)">L3 待确认: ${el.L3||0} 实体</div>
+      `;
+    }
+
+    const drift = document.getElementById('ring-drift');
+    if (drift) {
+      try {
+        const driftResp = await fetch(API+'/api/persona/drift').then(r=>r.json()).catch(() => null);
+        if (driftResp && driftResp.current_drift) {
+          const score = (driftResp.current_drift.cosine_similarity||1).toFixed(2);
+          const stable = !driftResp.current_drift.needs_review;
+          drift.innerHTML = `人格漂移: ${score} ${stable ? '稳定' : '需检查'}`;
+        } else {
+          drift.innerHTML = '<span style="color:var(--text-muted);font-size:11px">等待首次快照...</span>';
+        }
+      } catch(e) {
+        drift.innerHTML = '<span style="color:var(--text-muted);font-size:11px">不可用</span>';
+      }
+    }
+
+    renderRingGraph();
+
+  } catch(e) {
+    console.error('Personal graph error:', e);
+  }
+}
+
+function renderRingGraph() {
+  const svg = document.getElementById('ring-svg');
+  if (!svg || !_ringData) return;
+
+  const nodes = _ringData.nodes || [];
+  const edges = _ringData.edges || [];
+  const container = svg.parentElement;
+  const W = container.clientWidth || 900;
+  const H = container.clientHeight || 700;
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = '';
+
+  if (!nodes.length) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#9d9db5" font-size="14">你的知识环还是空的，聊聊天它就会开始生长</text>`;
+    return;
+  }
+
+  const colorMap = {
+    concept: '#6c5ce7', content: '#2dd4a0', person: '#f6b83d',
+    event: '#f06565', artifact: '#9b8cf0',
+  };
+
+  const maxNodes = Math.min(nodes.length, 600);
+  const visible = nodes.slice(0, maxNodes);
+  visible.forEach(n => {
+    n.r = 5 + (n.confidence || 0.5) * 9;
+    n.label = (n.name || '').length > 10 ? (n.name || '').slice(0, 9) + '...' : (n.name || '');
+    n.color = colorMap[n.type] || '#6e6e85';
+  });
+
+  // Sort by confidence: higher → inner rings
+  visible.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+
+  const cx = W / 2, cy = H / 2;
+  const maxR = Math.min(W, H) * 0.42;
+
+  // Place nodes in 4 concentric rings
+  const rings = [[], [], [], []];
+  visible.forEach((n, i) => {
+    if (i < visible.length * 0.15) rings[0].push(n);
+    else if (i < visible.length * 0.40) rings[1].push(n);
+    else if (i < visible.length * 0.70) rings[2].push(n);
+    else rings[3].push(n);
+  });
+
+  const ringRadii = [maxR * 0.18, maxR * 0.38, maxR * 0.58, maxR * 0.78];
+  rings.forEach((ring, ri) => {
+    ring.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / ring.length - Math.PI / 2;
+      const r = ringRadii[ri] + (Math.random() - 0.5) * 20;
+      n.x = cx + r * Math.cos(angle);
+      n.y = cy + r * Math.sin(angle);
+      n.vx = 0; n.vy = 0;
+    });
+  });
+
+  const neighborMap = new Map();
+  visible.forEach(n => neighborMap.set(n.entity_id, new Set()));
+  edges.forEach(e => {
+    const sa = neighborMap.get(e.source_id);
+    const ta = neighborMap.get(e.target_id);
+    if (sa) sa.add(e.target_id);
+    if (ta) ta.add(e.source_id);
+  });
+
+  const nodeIdx = new Map();
+  visible.forEach(n => nodeIdx.set(n.entity_id, n));
+
+  const iterations = 120;
+  const alpha0 = 1.0;
+  for (let iter = 0; iter < iterations; iter++) {
+    const alpha = alpha0 * (1 - iter / iterations);
+    const alpha2 = alpha * alpha;
+
+    for (let i = 0; i < visible.length; i++) {
+      for (let j = i + 1; j < visible.length; j++) {
+        const a = visible[i], b = visible[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) { dist = 1; dx = 1; dy = 0; }
+        const minDist = a.r + b.r + 8;
+        const force = (600 * alpha2) / (dist * dist);
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        a.vx -= fx; a.vy -= fy;
+        b.vx += fx; b.vy += fy;
+      }
+    }
+
+    edges.forEach(e => {
+      const s = nodeIdx.get(e.source_id);
+      const t = nodeIdx.get(e.target_id);
+      if (!s || !t) return;
+      let dx = t.x - s.x, dy = t.y - s.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) { dist = 1; dx = 1; dy = 0; }
+      const rest = (s.r + t.r) * 2.5 + 30;
+      const force = (dist - rest) * 0.03 * alpha;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      s.vx += fx; s.vy += fy;
+      t.vx -= fx; t.vy -= fy;
+    });
+
+    visible.forEach(n => {
+      const gx = (cx - n.x) * 0.002;
+      const gy = (cy - n.y) * 0.002;
+      n.vx += gx; n.vy += gy;
+    });
+
+    visible.forEach(n => {
+      n.vx *= 0.45;
+      n.vy *= 0.45;
+      n.x += n.vx;
+      n.y += n.vy;
+    });
+
+    for (let i = 0; i < visible.length; i++) {
+      for (let j = i + 1; j < visible.length; j++) {
+        const a = visible[i], b = visible[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const minDist = a.r + b.r + 6;
+        if (dist < minDist && dist > 0.01) {
+          const overlap = minDist - dist;
+          const fx = (dx / dist) * overlap * 0.5;
+          const fy = (dy / dist) * overlap * 0.5;
+          a.x -= fx; a.y -= fy;
+          b.x += fx; b.y += fy;
+        }
+      }
+    }
+
+    visible.forEach(n => {
+      n.x = Math.max(n.r, Math.min(W - n.r, n.x));
+      n.y = Math.max(n.r, Math.min(H - n.r, n.y));
+    });
+  }
+
+  const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  edgeGroup.setAttribute('id', 'ring-edge-group');
+  edges.forEach(e => {
+    const s = nodeIdx.get(e.source_id);
+    const t = nodeIdx.get(e.target_id);
+    if (!s || !t) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', s.x); line.setAttribute('y1', s.y);
+    line.setAttribute('x2', t.x); line.setAttribute('y2', t.y);
+    const dashMap = {belongs_to:'4,2', contains:'4,2', causes:'none', produces:'none', inspired_by:'6,3', knows:'2,2'};
+    line.setAttribute('stroke', '#3d3d50');
+    line.setAttribute('stroke-width', Math.max(0.5, (e.confidence||0.5)*2));
+    line.setAttribute('stroke-dasharray', dashMap[e.type]||'3,3');
+    line.setAttribute('opacity', '0.35');
+    line.style.cursor = 'pointer';
+    line.onclick = () => alert(`关系: ${e.source_name} -> ${e.target_name}\n类型: ${e.type}\n置信度: ${(e.confidence||0).toFixed(2)}`);
+    edgeGroup.appendChild(line);
+  });
+  svg.appendChild(edgeGroup);
+
+  const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  nodeGroup.setAttribute('id', 'ring-node-group');
+  visible.forEach(n => {
+    const color = n.color || '#6e6e85';
+    const size = n.r;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${n.x},${n.y})`);
+    g.style.cursor = 'pointer';
+    g.setAttribute('data-eid', n.entity_id);
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', size);
+    circle.setAttribute('fill', color);
+    circle.setAttribute('opacity', '0.88');
+    circle.setAttribute('stroke', '#0f0f13');
+    circle.setAttribute('stroke-width', '1.2');
+    g.appendChild(circle);
+
+    // Label for medium+ nodes only
+    if (size > 7) {
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('y', size + 10);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('fill', '#9d9db5');
+      text.setAttribute('font-size', '9');
+      text.setAttribute('font-family', 'sans-serif');
+      text.textContent = n.label;
+      g.appendChild(text);
+    }
+
+    g.onmouseenter = () => {
+      circle.setAttribute('stroke', '#fff');
+      circle.setAttribute('stroke-width', '2.5');
+    };
+    g.onmouseleave = () => {
+      circle.setAttribute('stroke', '#0f0f13');
+      circle.setAttribute('stroke-width', '1.2');
+    };
+    g.onclick = () => showRingEntityDetail(n.entity_id);
+
+    nodeGroup.appendChild(g);
+  });
+  svg.appendChild(nodeGroup);
+
+  let zoomLevel = 1, panX = 0, panY = 0;
+  const updateTransform = () => {
+    nodeGroup.setAttribute('transform', `translate(${panX},${panY}) scale(${zoomLevel})`);
+    edgeGroup.setAttribute('transform', `translate(${panX},${panY}) scale(${zoomLevel})`);
+  };
+
+  svg.onwheel = (e) => {
+    e.preventDefault();
+    const oldZoom = zoomLevel;
+    zoomLevel *= e.deltaY < 0 ? 1.12 : 0.88;
+    zoomLevel = Math.max(0.15, Math.min(4, zoomLevel));
+    const rect = svg.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    panX = mx - (mx - panX) * (zoomLevel / oldZoom);
+    panY = my - (my - panY) * (zoomLevel / oldZoom);
+    updateTransform();
+  };
+
+  let dragging = false, dragX = 0, dragY = 0;
+  svg.onmousedown = (e) => {
+    if (e.target === svg) {
+      dragging = true;
+      dragX = e.clientX - panX;
+      dragY = e.clientY - panY;
+      svg.style.cursor = 'grabbing';
+    }
+  };
+  svg.onmousemove = (e) => {
+    if (dragging) {
+      panX = e.clientX - dragX;
+      panY = e.clientY - dragY;
+      updateTransform();
+    }
+  };
+  svg.onmouseup = () => { dragging = false; svg.style.cursor = 'default'; };
+  svg.onmouseleave = () => { dragging = false; svg.style.cursor = 'default'; };
+
+  svg.setAttribute('tabindex', '0');
+  svg.onkeydown = (e) => {
+    const step = 40;
+    if (e.key === 'ArrowLeft') panX -= step;
+    else if (e.key === 'ArrowRight') panX += step;
+    else if (e.key === 'ArrowUp') panY -= step;
+    else if (e.key === 'ArrowDown') panY += step;
+    else if (e.key === '0') { zoomLevel = 1; panX = 0; panY = 0; }
+    else return;
+    e.preventDefault();
+    updateTransform();
+  };
+}
+
+async function showRingEntityDetail(entityId) {
+  openKnowledgePanel('entity', entityId);
+}
+
+// =========================================================================
+// Knowledge Panel
+// =========================================================================
+function openKnowledgePanel(mode, data) {
+  const panel = document.getElementById('knowledge-panel');
+  const content = document.getElementById('kp-content');
+  if (!panel || !content) return;
+  panel.classList.remove('hidden');
+  content.innerHTML = '<div class="spinner"></div>';
+  switch (mode) {
+    case 'entity': loadEntityInPanel(data); break;
+    case 'persona': loadPersonaInPanel(); break;
+    case 'reconnect': loadReconnectInPanel(); break;
+    case 'daily': loadDailyInPanel(); break;
+  }
+}
+
+function closeKnowledgePanel() {
+  const panel = document.getElementById('knowledge-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+async function loadEntityInPanel(entityId) {
+  const content = document.getElementById('kp-content');
+  try {
+    const resp = await fetch(API+'/api/v1/entity/'+entityId).then(r=>r.json());
+    const e = resp.entity || {};
+    const aliases = resp.aliases || [];
+    const relations = resp.relations || [];
+    const colorMap = {concept:'#6c5ce7',content:'#2dd4a0',person:'#f6b83d',event:'#f06565',artifact:'#9b8cf0'};
+
+    content.innerHTML = `
+      <div style="margin-bottom:12px">
+        <h3 style="display:flex;align-items:center;gap:8px;margin:0 0 4px">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colorMap[e.type]||'#6e6e85'}"></span>
+          ${esc(e.name||e.entity_id)}
+        </h3>
+        <p style="font-size:11px;color:var(--text-muted);margin:0">${esc(e.type||'')}${e.type_detail ? ' · '+esc(e.type_detail) : ''} · 置信度 ${(e.confidence||0).toFixed(2)}</p>
+      </div>
+      ${aliases.length ? `<div style="margin-bottom:10px"><b style="font-size:11px;color:var(--text-weak)">别名</b><div style="font-size:12px;margin-top:2px">${aliases.map(a=>esc(a.name)).join(', ')}</div></div>` : ''}
+      ${relations.length ? `<div style="margin-bottom:10px"><b style="font-size:11px;color:var(--text-weak)">关系 (${relations.length})</b>
+        ${relations.slice(0, 10).map(r=>`<div style="font-size:12px;margin:3px 0;padding:4px 8px;background:var(--bg-card);border-radius:6px;color:var(--text-muted)">${esc(r.type||'related')} → ${esc(r.source_name===e.name?r.target_name:r.source_name)}</div>`).join('')}
+      </div>` : ''}
+      <div style="margin-bottom:10px">
+        <b style="font-size:11px;color:var(--text-weak)">纠错</b>
+        <div class="correction-form" style="margin-top:6px">
+          <textarea id="kp-correction-text" placeholder="描述需要纠正的内容，如：类型应为 person、领域应为 机器学习" rows="2" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:12px;resize:none;font-family:inherit"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+            <button onclick="submitPanelCorrection('${entityId}')" style="padding:5px 12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:11px">提交纠错</button>
+          </div>
+          <div id="kp-correction-status" style="font-size:11px;margin-top:4px"></div>
+        </div>
+      </div>`;
+  } catch(e) {
+    content.innerHTML = '<p style="color:var(--text-muted);font-size:12px">加载实体详情失败</p>';
+  }
+}
+
+async function submitPanelCorrection(entityId) {
+  const textarea = document.getElementById('kp-correction-text');
+  const status = document.getElementById('kp-correction-status');
+  const correction = textarea ? textarea.value.trim() : '';
+  if (!correction) return;
+  try {
+    const resp = await fetch(API+'/api/v1/entity/'+entityId+'/correct', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({correction})
+    }).then(r=>r.json());
+    status.textContent = '已记录纠错';
+    status.style.color = 'var(--green)';
+    if (textarea) textarea.value = '';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  } catch(e) {
+    status.textContent = '纠错失败';
+    status.style.color = 'var(--red)';
+  }
+}
+
+function loadPersonaInPanel() {
+  const content = document.getElementById('kp-content');
+  const layers = state.persona.layers || [];
+  if (!layers.length) {
+    content.innerHTML = '<p style="color:var(--text-muted);font-size:12px">Persona 尚未建立</p>';
+    return;
+  }
+  let html = '<h4 style="margin:0 0 8px">Persona 四层边界</h4>';
+  layers.forEach(l => {
+    html += `<div style="margin-bottom:8px;padding:8px;background:var(--bg-card);border-radius:8px;border-left:3px solid ${l.immune?'var(--red)':'var(--accent)'}">
+      <div style="font-size:11px;color:var(--text-muted)">${l.icon} ${l.label}${l.immune?' [免疫]':''}</div>
+      <div style="font-size:12px;white-space:pre-wrap;color:var(--text)">${esc((l.content||'').substring(0, 500))}</div>
+    </div>`;
+  });
+  content.innerHTML = html;
+}
+
+function loadReconnectInPanel() {
+  const content = document.getElementById('kp-content');
+  const recs = state.reconnect || [];
+  if (!recs.length) {
+    content.innerHTML = '<p style="color:var(--text-muted);font-size:12px">暂无社交重连建议</p>';
+    return;
+  }
+  let html = '<h4 style="margin:0 0 8px">社交重连</h4>';
+  recs.forEach(r => {
+    html += `<div style="margin-bottom:8px;padding:10px;background:linear-gradient(135deg,#1e1a50,#16161e);border:1px solid #4c3fd9;border-radius:10px">
+      <div style="font-weight:700;color:var(--amber);font-size:13px">${esc(r.name||r.entity_name||'')}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin:4px 0">${esc(r.detail||r.message||'')}</div>
+      ${r.days_inactive ? `<div style="font-size:10px;color:var(--text-weak)">${r.days_inactive}天未互动</div>` : ''}
+    </div>`;
+  });
+  content.innerHTML = html;
+}
+
+function loadDailyInPanel() {
+  const content = document.getElementById('kp-content');
+  content.innerHTML = '<div class="spinner"></div>';
+  fetch(API+'/api/v1/daily-report').then(r=>r.json()).then(daily => {
+    let html = '<h4 style="margin:0 0 8px">今日报告</h4>';
+    if (daily.streak) html += `<div style="font-size:14px;color:var(--amber);margin-bottom:8px">连续活跃 ${daily.streak} 天</div>`;
+    if (daily.totals) html += `<div style="display:flex;gap:16px;margin-bottom:8px"><div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--accent)">${daily.totals.entities||0}</div><div style="font-size:10px;color:var(--text-weak)">实体</div></div><div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--green)">${daily.totals.relations||0}</div><div style="font-size:10px;color:var(--text-weak)">关系</div></div><div style="text-align:center"><div style="font-size:20px;font-weight:700;color:var(--accent-purple)">${daily.totals.domains||0}</div><div style="font-size:10px;color:var(--text-weak)">领域</div></div></div>`;
+    if (daily.domain_growth && daily.domain_growth.length) {
+      html += '<div style="font-size:11px;color:var(--text-muted)">领域增长</div>';
+      daily.domain_growth.slice(0,5).forEach(d => {
+        html += `<div style="font-size:12px;margin:2px 0">${esc(d.domain)} +${d.count}</div>`;
+      });
+    }
+    content.innerHTML = html;
+  }).catch(() => {
+    content.innerHTML = '<p style="color:var(--text-muted);font-size:12px">加载日报失败</p>';
+  });
+}
+
+function filterRingGraph() {
+  loadPersonalGraph();
+}
+
+async function refreshPersonalGraph() {
+  loadPersonalGraph();
+}
+
+// =========================================================================
+// Helpers
+// =========================================================================
+function esc(s) {
+  if (!s) return '';
+  s = String(s);
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function renderBar(val) {
+  const pct = Math.round((val||0)*100);
+  const color = pct > 60 ? 'var(--green)' : pct > 30 ? 'var(--amber)' : 'var(--red)';
+  return `<span style="color:${color}">${'|'.repeat(Math.round(pct/10))}${'·'.repeat(10-Math.round(pct/10))} ${pct}%</span>`;
+}
+
+async function captureSnapshot() {
+  try {
+    const resp = await fetch(API+'/api/persona/snapshot', { method: 'POST' }).then(r=>r.json());
+    alert(`快照已捕获\n时间: ${new Date(resp.timestamp*1000).toLocaleString('zh-CN')}\n核心价值条目: ${resp.core_value_count}`);
+  } catch(e) {
+    console.error('Snapshot failed:', e);
+  }
+}
+
+async function loadSessionMemories() {
+  const div = document.getElementById('session-memories');
+  if (!div) return;
+  try {
+    const resp = await fetch(API+'/api/memories/session?limit=20').then(r=>r.json());
+    const edges = resp.edges || [];
+    if (!edges.length) {
+      div.innerHTML = '<div class="empty-state" style="padding:12px"><p style="font-size:12px">开始对话后，本次会话提取的记忆会显示在这里</p></div>';
+      return;
+    }
+    let html = '';
+    edges.slice(0, 12).forEach(e => {
+      const emo = (e.emotion||0) > 0.3 ? ':-)' : (e.emotion||0) < -0.3 ? ':-(' : ':-|';
+      html += `<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:11px;cursor:pointer" onclick="showEntityDetail('${e.entity_id}')">
+        ${emo} <b>${esc(e.entity_name||'?')}</b>
+        <span class="badge badge-${e.entity_type||'concept'}" style="margin-left:4px;font-size:10px">${e.entity_type||'?'}</span>
+        <span style="color:var(--text-muted);margin-left:4px">${e.role||''}</span>
+      </div>`;
+    });
+    div.innerHTML = html;
+  } catch(e) {
+    console.error('Session memories error:', e);
+  }
+}
+
+async function buildKnowledgeCardForLastReply() {
+  try {
+    const resp = await fetch(API+'/api/memories/session?limit=20').then(r=>r.json());
+    const edges = resp.edges || [];
+    if (!edges.length) return;
+    // Find the last assistant message
+    const allMsgs = document.querySelectorAll('.chat-msg.assistant');
+    const lastMsg = allMsgs[allMsgs.length - 1];
+    if (!lastMsg) return;
+    // Remove existing knowledge card if any
+    const existing = lastMsg.querySelector('.knowledge-card');
+    if (existing) existing.remove();
+    // Aggregate entities by type
+    const entities = {};
+    edges.forEach(e => {
+      const key = e.entity_name || '?';
+      const type = e.entity_type || 'concept';
+      if (!entities[key]) entities[key] = { name: key, type, count: 0 };
+      entities[key].count++;
+    });
+    const entityList = Object.values(entities).slice(0, 8);
+    const typeCounts = {};
+    entityList.forEach(e => { typeCounts[e.type] = (typeCounts[e.type]||0) + 1; });
+    // Build card
+    let card = document.createElement('div');
+    card.className = 'knowledge-card collapsed';
+    card.innerHTML = `
+      <div class="kc-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <span class="kc-icon">🧠</span>
+        <span class="kc-title">知识提取 (${entityList.length}实体 · ${edges.length}条记忆)</span>
+        <span class="kc-toggle">▼</span>
+      </div>
+      <div class="kc-body">
+        <div class="kc-row">
+          <span class="kc-label">实体</span>
+          <span class="kc-value">+${entityList.length}</span>
+          <span class="kc-items">
+            ${entityList.map(e => `<span class="kc-entity ${e.type}" onclick="event.stopPropagation();openKnowledgePanel('entity','${e.name}')">${esc(e.name)}</span>`).join('')}
+          </span>
+        </div>
+        <div class="kc-row">
+          <span class="kc-label">类型分布</span>
+          <span class="kc-items">
+            ${Object.entries(typeCounts).map(([t,c]) => `<span class="kc-entity ${t}">${t} ×${c}</span>`).join('')}
+          </span>
+        </div>
+        <div class="kc-actions">
+          <button class="kc-btn" onclick="event.stopPropagation();switchToView('ring')">知识环中查看</button>
+        </div>
+      </div>`;
+    lastMsg.appendChild(card);
+    // Auto-expand for 3 seconds then collapse
+    setTimeout(() => { card.classList.add('collapsed'); }, 5000);
+    // Remove collapsed to show initially
+    card.classList.remove('collapsed');
+    setTimeout(() => { card.classList.add('collapsed'); }, 4000);
+  } catch(e) { console.error('Knowledge card error:', e); }
+}
+
+// =========================================================================
+// File Browser
+// =========================================================================
+async function openFileBrowser() {
+  document.getElementById('file-modal-title').textContent = '文件浏览器';
+  const body = document.getElementById('file-modal-body');
+  body.innerHTML = '<div class="spinner"></div> 加载中...';
+  document.getElementById('file-modal').classList.add('open');
+
+  try {
+    const [filesResp, dbResp] = await Promise.all([
+      fetch(API+'/api/files').then(r=>r.json()),
+      fetch(API+'/api/db/tables').then(r=>r.json()),
+    ]);
+    const files = filesResp.files || [];
+    const tables = dbResp.tables || [];
+
+    let html = '<div style="margin-bottom:12px;font-weight:600">文件</div><div class="file-list">';
+    files.forEach(f => {
+      html += `<div class="file-item" onclick="viewFile('${f.key}')">
+        <div class="fi-name">${f.description}</div>
+        <div class="fi-meta">${f.name}${f.exists ? ' · ' + formatSize(f.size) : ' (不存在)'}</div>
+      </div>`;
+    });
+    html += '</div>';
+
+    html += `<div style="margin:16px 0 8px;font-weight:600">数据库 <span style="font-size:10px;color:var(--text-muted)">${dbResp.db_path||''} · ${formatSize(dbResp.db_size||0)}</span></div>`;
+    html += '<table class="data-table"><tr><th>表名</th><th>行数</th></tr>';
+    tables.forEach(t => {
+      html += `<tr><td>${esc(t.table)}</td><td>${(t.rows||0).toLocaleString()}</td></tr>`;
+    });
+    html += '</table>';
+
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = `<span style="color:var(--red)">加载失败: ${e}</span>`;
+  }
+}
+
+async function viewFile(key) {
+  const body = document.getElementById('file-modal-body');
+  body.innerHTML = '<div class="spinner"></div> 加载中...';
+  try {
+    const resp = await fetch(API+'/api/files/'+key).then(r=>r.json());
+    document.getElementById('file-modal-title').textContent = '文件: ' + resp.name;
+    body.innerHTML = `<div style="margin-bottom:8px;font-size:11px;color:var(--text-muted)">${esc(resp.path)} · ${resp.size} 字符</div>
+      <button onclick="openFileBrowser()" style="margin-bottom:8px;padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:11px">返回列表</button>
+      <pre>${esc(resp.content)}</pre>`;
+  } catch(e) {
+    body.innerHTML = `<span style="color:var(--red)">读取失败: ${e}</span>
+      <br><button onclick="openFileBrowser()" style="margin-top:8px;padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:11px">返回列表</button>`;
+  }
+}
+
+function closeFileBrowser() {
+  document.getElementById('file-modal').classList.remove('open');
+}
+
+async function openResourceMonitor() {
+  try {
+    const resp = await fetch(API+'/api/system/resources').then(r=>r.json());
+    const b = resp.budget;
+    const s = resp.storage;
+    const c = resp.counts;
+    const deg = resp.degradation || [];
+
+    const degLabels = {
+      dynamic_embedding_cache_disabled: '动态图嵌入缓存已关闭',
+      knowledge_index_trimmed: '知识索引已裁剪',
+      group_render_fallback_list_only: '分组渲染降级为列表模式',
+    };
+
+    let html = `<div class="modal-overlay" onclick="this.remove()" style="display:flex">
+      <div class="modal-box" style="max-width:480px">
+        <h3>双舱资源监控</h3>
+        <h4>热舱预算 (${b.high_performance_mode?'高性能 125MB':'标准 100MB'})</h4>
+        <div style="background:var(--bg-deep);border-radius:8px;padding:8px;margin:4px 0">
+          <div style="display:flex;justify-content:space-between;font-size:12px">
+            <span>已用: ${b.used_mb} MB</span><span>剩余: ${b.remaining_mb} MB</span><span>${b.usage_pct}%</span>
+          </div>
+          <div class="track" style="width:100%"><div class="fill" style="width:${Math.min(b.usage_pct,100)}%;background:${b.usage_pct>80?'var(--red)':b.usage_pct>60?'var(--amber)':'var(--accent)'}"></div></div>
+        </div>
+        <h4>存储</h4>
+        <table class="data-table" style="font-size:10px"><tr><th>组件</th><th>大小</th></tr>
+          <tr><td>SQLite 数据</td><td>${s.db_mb} MB</td></tr>
+          <tr><td>WAL 日志</td><td>${s.wal_mb} MB</td></tr>
+          <tr><td>总计</td><td>${s.total_db_mb} MB</td></tr>
+        </table>
+        <h4>计数</h4>
+        <table class="data-table" style="font-size:10px"><tr><th>表</th><th>行数</th></tr>
+          <tr><td>实体</td><td>${c.entities}</td></tr>
+          <tr><td>记忆边</td><td>${c.memory_edges}</td></tr>
+          <tr><td>社交边</td><td>${c.social_edges}</td></tr>
+          <tr><td>知识条目</td><td>${c.knowledge_entries}</td></tr>
+        </table>`;
+
+    if (deg.length) {
+      html += `<h4 style="color:var(--red)">降级状态</h4>`;
+      deg.forEach(d => { html += `<p style="font-size:11px;color:var(--red)">- ${degLabels[d]||d}</p>`; });
+    }
+
+    html += `<p style="font-size:10px;color:var(--text-muted);margin-top:8px">Python ${resp.python_version} | ${resp.generated_at}</p>
+      <button onclick="this.closest('.modal-overlay').remove()" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;font-size:12px">关闭</button></div></div>`;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+  } catch(e) { console.error(e); }
+}
+
+function formatSize(bytes) {
+  if (!bytes || bytes < 1024) return (bytes||0) + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+</script>
+</body>
+</html>

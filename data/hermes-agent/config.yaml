@@ -1,0 +1,149 @@
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model:
+  # Default model to use (can be overridden with --model flag)
+  # Both "default" and "model" work as the key name here.
+  default: "deepseek-chat"
+  
+  # Inference provider selection:
+  #   "auto"         - Auto-detect from credentials (default)
+  #   "openrouter"   - OpenRouter (requires: OPENROUTER_API_KEY or OPENAI_API_KEY)
+  #   "anthropic"    - Direct Anthropic API (requires: ANTHROPIC_API_KEY)
+  #   "openai-codex" - OpenAI Codex (requires: hermes login --provider openai-codex)
+  #   "copilot"      - GitHub Copilot / GitHub Models (requires: GITHUB_TOKEN)
+  #   "gemini"      - Use Google AI Studio direct (requires: GOOGLE_API_KEY or GEMINI_API_KEY)
+  #   "zai"         - Use z.ai / ZhipuAI GLM models (requires: GLM_API_KEY)
+  #   "kimi-coding"  - Kimi / Moonshot AI (requires: KIMI_API_KEY)
+  #   "deepseek"     - DeepSeek AI (requires: DEEPSEEK_API_KEY)
+  #
+  # Can also be overridden with --provider flag or HERMES_INFERENCE_PROVIDER env var.
+  provider: "deepseek"
+
+# =============================================================================
+# DeepSeek Provider Configuration
+# =============================================================================
+deepseek:
+  api_key: "sk-43fc65fd28bb449082f98fd34b44a71e"
+  base_url: "https://api.deepseek.com/v1"
+  
+  # Optional parameters
+  temperature: 0.7
+  max_tokens: 4096
+  top_p: 0.9
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+
+# =============================================================================
+# Terminal Configuration
+# =============================================================================
+terminal:
+  # Backend: "local" (default) or "remote"
+  backend: "local"
+  
+  # Shell to use (only for local backend)
+  shell: "bash"
+  
+  # Working directory for new terminals
+  cwd: "/opt/data"
+
+# =============================================================================
+# Tool Configuration
+# =============================================================================
+tools:
+  # List of enabled tools
+  enabled:
+    - file
+    - terminal
+    - code_execution
+    - web
+    - browser
+    - memory
+    - skills
+    - heimdall
+
+  # Tool-specific configurations
+  file:
+    max_file_size_mb: 10
+    
+  web:
+    max_response_size_mb: 5
+    
+  browser:
+    headless: true
+
+# =============================================================================
+# Memory Configuration
+# =============================================================================
+memory:
+  # Memory provider: "builtin" (default) or "external"
+  provider: "builtin"
+  
+  # Maximum context length (in tokens)
+  max_context_tokens: 128000
+  
+  # Whether to compress context when it exceeds the limit
+  compress_context: true
+
+# =============================================================================
+# Skill Configuration
+# =============================================================================
+skills:
+  # Directory to look for user skills
+  user_skills_dir: "/opt/data/skills"
+  
+  # Whether to auto-load skills on startup
+  auto_load: true
+  
+  # Skills to load by default
+  default_skills:
+    - software-development/plan
+    - software-development/systematic-debugging
+    - software-development/code-review
+    - software-development/refactoring
+
+# =============================================================================
+# Session Configuration
+# =============================================================================
+session:
+  # Session storage directory
+  storage_dir: "/opt/data/sessions"
+  
+  # Maximum session age (in days) before cleanup
+  max_age_days: 30
+  
+  # Whether to persist sessions across restarts
+  persist: true
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file path
+  file: "/opt/data/logs/hermes.log"
+  
+  # Maximum log file size (in MB)
+  max_size_mb: 10
+  
+  # Number of backup log files to keep
+  backup_count: 5
+
+# =============================================================================
+# HEIMDALL Knowledge Engine Configuration (V2.3)
+# =============================================================================
+heimdall:
+  # Per-agent knowledge namespace for domain isolation.
+  # Set to a unique name (e.g. "stock", "architecture") to scope knowledge
+  # to that domain. Leave null for global/通用 Agent mode.
+  knowledge_namespace: null
+
+  # Embedding model configuration for entity vector computation.
+  # All fields are optional — defaults follow model.provider/model.default.
+  embedding:
+    provider: ""       # Default: follows model.provider
+    model: ""          # Default: follows model.default
+    base_url: ""       # Default: follows provider base_url
+    dimension: 1024    # Output vector dimension

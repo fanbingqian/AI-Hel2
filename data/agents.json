@@ -1,0 +1,20 @@
+{
+  "agents": [
+    {
+      "agent_type": "hermes_builtin",
+      "config": {
+        "api_key": "sk-d0667070fc5c4f1e888f96f177e62150",
+        "base_url": "https://api.deepseek.com",
+        "models": [
+          "deepseek-v4-pro"
+        ],
+        "reasoning_models": [],
+        "vision_models": []
+      },
+      "display_name": "Hermes Agent (内置)",
+      "enabled": true,
+      "id": "hermes-builtin"
+    }
+  ],
+  "default_agent_id": "hermes-builtin"
+}

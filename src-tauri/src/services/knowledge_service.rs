@@ -6085,6 +6085,12 @@ impl KnowledgeService {
         let py_path = self.python_script_path("maintain_dedup.py");
 
         let python_exe = self.resolve_python();
+        log::info!("[dedup] python={} script={}", python_exe.display(), py_path.display());
+        log::info!("[dedup] nexus_env: mode={} provider={} has_key={}",
+            env_vars.iter().find(|(k,_)| k=="NEXUS_LLM_MODE").map(|(_,v)| v.as_str()).unwrap_or("?"),
+            env_vars.iter().find(|(k,_)| k=="NEXUS_LLM_PROVIDER").map(|(_,v)| v.as_str()).unwrap_or("?"),
+            env_vars.iter().find(|(k,_)| k=="NEXUS_LLM_API_KEY").map(|(_,v)| !v.is_empty()).unwrap_or(false),
+        );
         let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -6097,7 +6103,11 @@ impl KnowledgeService {
             cmd.env(k, v);
         }
 
-        let mut child = cmd.spawn().map_err(|e| format!("启动 maintain_dedup.py 失败: {e}"))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            log::error!("[dedup] spawn failed: {e}");
+            format!("启动 maintain_dedup.py 失败: {e}")
+        })?;
+        log::info!("[dedup] spawned pid={}", child.id());
 
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
@@ -6108,8 +6118,11 @@ impl KnowledgeService {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            log::error!("[dedup] exit={} stderr={} stdout={}", output.status, stderr, stdout);
             return Err(format!("去重脚本异常: {stderr}"));
         }
+        log::info!("[dedup] success, stdout_len={}", output.stdout.len());
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let judgments: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap_or_default();
@@ -6975,6 +6988,7 @@ impl KnowledgeService {
         let py_path = self.python_script_path("transitive_infer.py");
 
         let python_exe = self.resolve_python();
+        log::info!("[infer] python={} script={}", python_exe.display(), py_path.display());
         let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -6987,7 +7001,11 @@ impl KnowledgeService {
             cmd.env(k, v);
         }
 
-        let mut child = cmd.spawn().map_err(|e| format!("启动 transitive_infer.py 失败: {e}"))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            log::error!("[infer] spawn failed: {e}");
+            format!("启动 transitive_infer.py 失败: {e}")
+        })?;
+        log::info!("[infer] spawned pid={}", child.id());
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
             let _ = stdin.write_all(json_input.as_bytes());
@@ -6996,8 +7014,11 @@ impl KnowledgeService {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            log::error!("[infer] exit={} stderr={} stdout={}", output.status, stderr, stdout);
             return Err(format!("传递推理脚本异常: {}", stderr));
         }
+        log::info!("[infer] success, stdout_len={}", output.stdout.len());
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let results: Vec<serde_json::Value> = serde_json::from_str(&stdout)
@@ -7212,6 +7233,7 @@ impl KnowledgeService {
         let json_input = serde_json::to_string(&edges_json).unwrap_or_default();
 
         let python_exe = self.resolve_python();
+        log::info!("[verify_edges] python={} script={}", python_exe.display(), py_path.display());
         let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -7224,7 +7246,11 @@ impl KnowledgeService {
             cmd.env(k, v);
         }
 
-        let mut child = cmd.spawn().map_err(|e| format!("启动验证脚本失败: {e}"))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            log::error!("[verify_edges] spawn failed: {e}");
+            format!("启动验证脚本失败: {e}")
+        })?;
+        log::info!("[verify_edges] spawned pid={}", child.id());
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
             let _ = stdin.write_all(json_input.as_bytes());
@@ -7235,6 +7261,7 @@ impl KnowledgeService {
         let mut rejected = 0u32;
 
         if output.status.success() {
+            log::info!("[verify_edges] success, stdout_len={}", output.stdout.len());
             let stdout = String::from_utf8_lossy(&output.stdout);
             if let Ok(judgments) = serde_json::from_str::<Vec<serde_json::Value>>(&stdout) {
                 for j in &judgments {
@@ -7255,6 +7282,12 @@ impl KnowledgeService {
                     }
                 }
             }
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            log::error!("[verify_edges] exit={} stderr={} stdout={}", output.status,
+                stderr.lines().last().unwrap_or(""),
+                stdout.lines().last().unwrap_or(""));
         }
 
         let batches = (total + 9) / 10;

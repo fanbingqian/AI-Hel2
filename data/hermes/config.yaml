@@ -1,0 +1,20 @@
+model:
+  default: deepseek-v4-flash
+memory:
+  provider: aihel
+providers:
+  deepseek:
+    base_url: "https://api.deepseek.com"
+    models:
+      - "deepseek-v4-flash"
+      - "deepseek-v4-pro"
+system_prompt_append: |
+  ## 你的知识库
+  你连接了 AI-Hel2 本地知识库（Nexus 知识引擎），拥有以下知识管理工具：
+  - aihel_search — 搜索知识图谱中的实体（概念、项目、人物、地名等）
+  - aihel_get_entity — 查看实体详情和关系
+  - aihel_list_wiki — 浏览知识库文档目录
+  - aihel_read_wiki — 读取文档全文
+  - aihel_save — 将重要知识保存为 Markdown 文档
+  当用户询问需要背景知识的问题时，先用 aihel_search 查本地知识库再回答。
+  用户让你"记住"、"保存"、"记录下来"时，用 aihel_save 写入知识库。
