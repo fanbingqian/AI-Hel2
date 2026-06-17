@@ -103,22 +103,7 @@ fn resolve_path(path_str: &str, base: &Path) -> std::path::PathBuf {
 }
 
 fn dirs_ai_hel2_home() -> std::path::PathBuf {
-    std::env::var("AI_HEL2_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            #[cfg(target_os = "windows")]
-            {
-                std::env::var("USERPROFILE")
-                    .map(|p| std::path::PathBuf::from(p).join(".ai-hel2"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                std::env::var("HOME")
-                    .map(|p| std::path::PathBuf::from(p).join(".ai-hel2"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            }
-        })
+    super::config_service::dirs_ai_hel2_home()
 }
 
 #[cfg(test)]

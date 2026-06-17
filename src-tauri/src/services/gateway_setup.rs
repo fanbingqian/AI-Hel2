@@ -910,12 +910,5 @@ impl GatewaySetupService {
 }
 
 fn dirs_home() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/tmp"))
-    }
+    super::config_service::dirs_home()
 }

@@ -247,13 +247,33 @@ impl Default for HermesConfig {
     }
 }
 
-fn dirs_ai_hel2_home() -> PathBuf {
-    std::env::var("AI_HEL2_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = dirs_home();
-            home.join(".ai-hel2")
-        })
+/// Resolve the AI-Hel2 data directory.
+///
+/// Priority:
+/// 1. `AI_HEL2_HOME` env var — explicit user override
+/// 2. Portable mode — if `{exe_dir}/data` exists, use it (installed version)
+/// 3. Default — `{USERPROFILE}/.ai-hel2` (development / legacy)
+pub fn dirs_ai_hel2_home() -> PathBuf {
+    // 1. Explicit env var override
+    if let Ok(home) = std::env::var("AI_HEL2_HOME") {
+        let p = PathBuf::from(&home);
+        if p.is_absolute() {
+            return p;
+        }
+    }
+    // 2. Portable mode: data/ next to the binary
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let portable_data = exe_dir.join("data");
+            if portable_data.exists() && portable_data.is_dir() {
+                log::info!("Portable mode: data dir at {}", portable_data.display());
+                return portable_data;
+            }
+        }
+    }
+    // 3. Default: ~/.ai-hel2
+    let home = dirs_home();
+    home.join(".ai-hel2")
 }
 
 pub fn dirs_home() -> PathBuf {
