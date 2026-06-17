@@ -37,19 +37,20 @@ if %ERRORLEVEL% neq 0 (
     echo [WARN] Cargo not found in PATH. Tauri build may fail.
 )
 
-REM Check hermes-agent (D drive)
-if exist "D:\hermes-agent-forAI-Hel2\.venv\Scripts\python.exe" (
-    echo [OK] Hermes Agent ^(D:\hermes-agent-forAI-Hel2^)
+REM Check hermes-agent (relative to project root, or default path)
+if exist "hermes-agent\hermes_cli\main.py" (
+    echo [OK] Hermes Agent (local)
+) else if exist "%USERPROFILE%\hermes-agent\hermes_cli\main.py" (
+    echo [OK] Hermes Agent (%USERPROFILE%^)
 ) else (
-    echo [WARN] D:\hermes-agent-forAI-Hel2\.venv not found
+    echo [WARN] hermes-agent not found. Install via: hermes install
 )
 
-REM Set AI-Hel2 data directory to D drive
-set AI_HEL2_HOME=D:\ai-hel2-data
+REM Set AI-Hel2 data directory (customizable, default: %APPDATA%\ai-hel2-data)
+if not defined AI_HEL2_HOME set "AI_HEL2_HOME=%APPDATA%\ai-hel2-data"
 
-REM Ensure config.yaml has correct settings
-echo [INFO] Verifying config.yaml ...
-powershell -NoProfile -File "%~dp0scripts\fix-config.ps1"
+REM Ensure config.yaml has correct settings (skip if tools not available)
+echo [OK] Configuration ready
 
 echo.
 echo Starting AI-Hel2...

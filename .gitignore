@@ -25,3 +25,22 @@ __pycache__/
 .venv/
 models/
 *.exe
+
+# ── 本地开发/调试文件（不应出现在公开仓库） ──
+
+# Claude Code 命令历史（含本地路径和调试信息）
+.claude/
+
+# 调试脚本
+check_*.py
+_explore_dbs.py
+
+# 测试/临时文件
+pill.html
+
+# 构建日志
+build-log.txt
+
+# 本地调试脚本
+scripts/fix-config.ps1
+scripts/update-hermes.bat
