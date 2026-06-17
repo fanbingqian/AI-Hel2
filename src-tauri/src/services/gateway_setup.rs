@@ -48,7 +48,7 @@ pub struct GatewaySetupService {
     script_path: PathBuf,
     python_path: PathBuf,
     hermes_home: PathBuf,       // AI-Hel2 data dir (for sessions/logs)
-    agent_home: PathBuf,        // Agent's ~/.hermes (for config.yaml)
+    agent_home: PathBuf,        // Agent's HERMES_HOME ({data}/hermes)
     active_sessions: Mutex<HashMap<String, QrSessionInfo>>,
 }
 
@@ -57,8 +57,8 @@ impl GatewaySetupService {
         let script_path = Self::find_helper_script();
         let python_path = Self::find_python();
 
-        // Agent's home: ~/.hermes (where config.yaml lives)
-        let agent_home = dirs_home().join(".hermes");
+        // Agent's home: nested under AI_HEL2_HOME
+        let agent_home = hermes_home.join("hermes");
 
         // Load persisted sessions (survive app restarts per-platform)
         let sessions_path = hermes_home.join("gateway_sessions.json");

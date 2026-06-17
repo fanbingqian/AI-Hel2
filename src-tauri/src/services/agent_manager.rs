@@ -716,7 +716,8 @@ impl AgentManager {
     /// Ensure .env has required Gateway settings for local access.
     /// Writes to Agent's ~/.hermes/.env so the Agent process can read it.
     fn ensure_dot_env(&self) {
-        let env_path = dirs_home().join(".hermes").join(".env");
+        let agent_home = self.hermes_home.join("hermes");
+        let env_path = agent_home.join(".env");
         let mut content = fs::read_to_string(&env_path).unwrap_or_default();
         let mut changed = false;
         if !content.contains("GATEWAY_ALLOW_ALL_USERS") {
@@ -728,7 +729,7 @@ impl AgentManager {
             changed = true;
         }
         if changed {
-            let _ = fs::create_dir_all(dirs_home().join(".hermes"));
+            let _ = fs::create_dir_all(&agent_home);
             let _ = fs::write(&env_path, &content);
             log::info!("Wrote .env at {}", env_path.display());
         }

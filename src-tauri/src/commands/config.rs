@@ -57,8 +57,8 @@ pub async fn update_api_key(
     let _ = fs::create_dir_all(service.hermes_home());
     fs::write(&env_path, &new_content).map_err(|e| format!("写入 .env 失败: {e}"))?;
 
-    // Also seed the agent's ~/.hermes/.env so the Python Agent can find the API key
-    let agent_home = crate::services::config_service::dirs_home().join(".hermes");
+    // Also seed the agent's HERMES_HOME/.env so the Python Agent can find the API key
+    let agent_home = service.hermes_home().join("hermes");
     let _ = fs::create_dir_all(&agent_home);
     let agent_env = agent_home.join(".env");
     fs::write(&agent_env, &new_content).map_err(|e| format!("写入 Agent .env 失败: {e}"))?;
