@@ -388,7 +388,7 @@ impl AgentManager {
         let _ = std::fs::create_dir_all(&agent_home);
         let agent_config = agent_home.join("config.yaml");
         if !agent_config.exists() {
-            let default_config = "model:\n  default: deepseek-v4-flash\nproviders:\n  deepseek:\n    base_url: \"https://api.deepseek.com\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\nsystem_prompt_append: |\n  ## 你的知识库\n  你连接了 AI-Hel2 本地知识库（Nexus 知识引擎），拥有以下知识管理工具：\n  - aihel_search — 搜索知识图谱中的实体（概念、项目、人物、地名等）\n  - aihel_get_entity — 查看实体详情和关系\n  - aihel_list_wiki — 浏览知识库文档目录\n  - aihel_read_wiki — 读取文档全文\n  - aihel_save — 将重要知识保存为 Markdown 文档\n  当用户询问需要背景知识的问题时，先用 aihel_search 查本地知识库再回答。\n  用户让你\"记住\"、\"保存\"、\"记录下来\"时，用 aihel_save 写入知识库。\n";
+            let default_config = "model:\n  default: deepseek-v4-flash\nmemory:\n  provider: aihel\nproviders:\n  deepseek:\n    base_url: \"https://api.deepseek.com\"\n    models:\n      - \"deepseek-v4-flash\"\n      - \"deepseek-v4-pro\"\nsystem_prompt_append: |\n  ## 你的知识库\n  你连接了 AI-Hel2 本地知识库（Nexus 知识引擎），拥有以下知识管理工具：\n  - aihel_search — 搜索知识图谱中的实体（概念、项目、人物、地名等）\n  - aihel_get_entity — 查看实体详情和关系\n  - aihel_list_wiki — 浏览知识库文档目录\n  - aihel_read_wiki — 读取文档全文\n  - aihel_save — 将重要知识保存为 Markdown 文档\n  当用户询问需要背景知识的问题时，先用 aihel_search 查本地知识库再回答。\n  用户让你\"记住\"、\"保存\"、\"记录下来\"时，用 aihel_save 写入知识库。\n";
             let _ = std::fs::write(&agent_config, default_config);
         }
         // Pass AI_HEL2_HOME so the aihel plugin knows where data lives
