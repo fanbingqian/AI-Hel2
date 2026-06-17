@@ -83,11 +83,11 @@ impl AgentManager {
         *rd = Some(dir);
     }
 
-    /// Install the aihel plugin to {AI_HEL2_HOME}/hermes/plugins/ on first run.
+    /// Install/refresh the aihel plugin to {AI_HEL2_HOME}/hermes/plugins/ on every start.
+    /// Always overwrites to ensure the deployed plugin matches the bundled version.
     fn install_aihel_plugin(&self) {
         let agent_home = self.hermes_home.join("hermes");
         let target = agent_home.join("plugins").join("aihel");
-        if target.exists() { return; }
 
         // Find plugin source: check extracted hermes-agent, then app_dir
         let source = self.hermes_home.join("hermes-agent").join("plugins").join("aihel");
@@ -98,13 +98,24 @@ impl AgentManager {
 
         if !source.exists() { return; }
         let _ = std::fs::create_dir_all(&target);
+
+        // Only overwrite if source is newer (avoids unnecessary writes on every startup)
+        let marker = target.join(".plugin_version");
+        let source_time = std::fs::metadata(&source).ok().and_then(|m| m.modified().ok());
+        let target_time = std::fs::metadata(&marker).ok().and_then(|m| m.modified().ok());
+        if source_time.is_some() && target_time.is_some() && source_time <= target_time {
+            return; // Already up to date
+        }
+
         for entry in std::fs::read_dir(&source).into_iter().flatten().flatten() {
             let src = entry.path();
             if src.extension().and_then(|e| e.to_str()) == Some("py") {
                 let _ = std::fs::copy(&src, target.join(src.file_name().unwrap()));
             }
         }
-        log::info!("AI-Hel plugin installed to {}", target.display());
+        // Write version marker
+        let _ = std::fs::write(&marker, "");
+        log::info!("AI-Hel plugin refreshed at {}", target.display());
     }
 
     pub fn port(&self) -> u16 {

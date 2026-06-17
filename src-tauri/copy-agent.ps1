@@ -1,8 +1,15 @@
+# Regenerate hermes-agent.zip so Tauri bundles the latest plugin code.
+# The ZIP is listed as a Tauri resource and extracted at runtime.
+$src = "$PSScriptRoot\hermes-agent"
+$zip = "$PSScriptRoot\hermes-agent.zip"
+if (Test-Path $zip) { Remove-Item $zip -Force }
+Compress-Archive -Path "$src\*" -DestinationPath $zip -Force
+Write-Output "Regenerated hermes-agent.zip"
+
 # Copy hermes-agent to NSIS staging directory before packaging.
 # NSIS makensis runs from target/release/bundle/nsis/ — its File command
 # resolves relative paths from there.  Without this copy, the installer
 # silently omits hermes-agent and the agent won't start.
-$src = "$PSScriptRoot\hermes-agent"
 $dstNsis = "$PSScriptRoot\target\release\bundle\nsis\hermes-agent"
 $dstRelease = "$PSScriptRoot\target\release\hermes-agent"
 
