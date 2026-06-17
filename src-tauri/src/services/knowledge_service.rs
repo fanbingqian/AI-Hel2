@@ -1943,6 +1943,20 @@ impl KnowledgeService {
         if cfg!(windows) { PathBuf::from("py") } else { PathBuf::from("python3") }
     }
 
+    /// Resolve Python for maintenance scripts at runtime.
+    /// Priority: embedded Python next to the data dir → compile-time paths → system PATH.
+    fn resolve_python(&self) -> PathBuf {
+        let scripts = if cfg!(windows) { "Scripts" } else { "bin" };
+        // 1. Embedded Python: {AI_HEL2_HOME}/hermes-agent/python/python.exe
+        let embedded = self.hermes_home.join("hermes-agent").join("python").join("python.exe");
+        if embedded.exists() { return embedded; }
+        // 2. Venv next to hermes-agent
+        let venv = self.hermes_home.join("hermes-agent").join("venv").join(scripts).join("python.exe");
+        if venv.exists() { return venv; }
+        // 3. Fallback to compile-time / system PATH resolution
+        Self::find_python()
+    }
+
     /// Compute SHA256 hash of content for dedup.
     fn content_hash(content: &str) -> String {
         use sha2::Digest;
@@ -6070,7 +6084,8 @@ impl KnowledgeService {
         let env_vars = self.nexus_env_vars();
         let py_path = self.python_script_path("maintain_dedup.py");
 
-        let mut cmd = std::process::Command::new("python");
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg(&py_path)
@@ -6959,7 +6974,8 @@ impl KnowledgeService {
         let json_input = serde_json::to_string(&candidates).unwrap_or_default();
         let py_path = self.python_script_path("transitive_infer.py");
 
-        let mut cmd = std::process::Command::new("python");
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg(&py_path)
@@ -7195,7 +7211,8 @@ impl KnowledgeService {
         let py_path = self.python_script_path("verify_edges.py");
         let json_input = serde_json::to_string(&edges_json).unwrap_or_default();
 
-        let mut cmd = std::process::Command::new("python");
+        let python_exe = self.resolve_python();
+        let mut cmd = std::process::Command::new(&python_exe);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.arg(&py_path)
