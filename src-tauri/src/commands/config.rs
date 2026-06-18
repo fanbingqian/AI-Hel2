@@ -339,11 +339,13 @@ pub async fn copy_agent_config_for_nexus(
         }
     }
 
+    let is_local = base_url.contains("localhost") || base_url.contains("127.0.0.1") || provider == "local" || provider == "ollama";
     Ok(serde_json::json!({
         "llm_provider": provider,
         "llm_model": model,
-        "llm_api_key": api_key,
-        "llm_base_url": base_url,
+        "llm_api_key": if is_local { "local" } else { &api_key },
+        "llm_base_url": if is_local { "" } else { &base_url },
+        "llm_mode": if is_local { "follow_agent" } else { "custom" },
     }))
 }
 

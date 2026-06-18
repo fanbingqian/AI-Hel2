@@ -279,12 +279,17 @@ function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, o
         <span style={{ fontSize: 11, color: "#b3b3b3", marginBottom: 3, display: "block" }}>模型</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <div style={{ flex: 1 }}>
-            <select value={selModel} onChange={(e) => onModelsChange(e.target.value)}
-              style={{ width: "100%", padding: "5px 8px", background: "#252525", border: "1px solid #444", borderRadius: 6, color: "#e0e0e0", fontSize: 13 }}>
-              <option value="">{detecting ? "检测中..." : optional ? "不使用" : "选择模型..."}</option>
-              {availModels.map(m => <option key={m} value={m}>{m}</option>)}
-              {selModel && !availModels.includes(selModel) && !detecting && <option value={selModel}>{selModel}</option>}
-            </select>
+{(availModels.length > 0 || preset?.id === "ollama") ? (
+              <select value={selModel} onChange={(e) => onModelsChange(e.target.value)}
+                style={{ width: "100%", padding: "5px 8px", background: "#252525", border: "1px solid #444", borderRadius: 6, color: "#e0e0e0", fontSize: 13 }}>
+                <option value="">{detecting ? "检测中..." : optional ? "不使用" : "选择模型..."}</option>
+                {availModels.map(m => <option key={m} value={m}>{m}</option>)}
+                {selModel && !availModels.includes(selModel) && !detecting && <option value={selModel}>{selModel}</option>}
+              </select>
+            ) : (
+              <input type="text" value={selModel} placeholder="输入模型名称" onChange={(e) => onModelsChange(e.target.value)}
+                style={{ width: "100%", padding: "5px 8px", background: "#252525", border: "1px solid #444", borderRadius: 6, color: "#e0e0e0", fontSize: 13 }} />
+            )}
           </div>
           <button type="button" className={styles.verifyBtn} onClick={handleVerify} disabled={verifyStatus === "checking" || !baseUrl || !selModel}>
             {verifyStatus === "checking" ? "验证中..." : "验证"}
