@@ -1264,6 +1264,22 @@ function NexusSection() {
 
       {/* ── LLM Config ── */}
       <div className={styles.dividerSm}>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+            <label className={styles.radioRow} onClick={() => handleModeChange("follow_agent")} style={{ display: "inline-flex", marginRight: 16 }}>
+              <input type="radio" name="nexus_mode" checked={llmMode === "follow_agent"} readOnly />
+              跟随Agent <span className={styles.radioHint}>使用聊天模型</span>
+            </label>
+            <label className={styles.radioRow} onClick={() => handleModeChange("custom")} style={{ display: "inline-flex" }}>
+              <input type="radio" name="nexus_mode" checked={llmMode === "custom"} readOnly />
+              独立配置 <span className={styles.radioHint}>单独设置API Key</span>
+            </label>
+          </div>
+          {llmMode === "follow_agent" && (
+            <div className={styles.desc} style={{ color: "#07c160" }}>Nexus 将使用 Agent 当前配置的大模型进行知识提取</div>
+          )}
+        </div>
+        {llmMode === "custom" && (<>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <div className={styles.label}>独立模型配置</div>
           <button type="button" className={styles.btnPrimary} style={{ padding: "4px 12px", fontSize: 12 }}
@@ -1272,7 +1288,7 @@ function NexusSection() {
                 const config: any = await invoke("copy_agent_config_for_nexus");
                 const updated = {
                   ...nexusConfig,
-                  llm_mode: "custom",
+                  llm_mode: config.llm_mode || "custom",
                   llm_provider: config.llm_provider,
                   llm_model: config.llm_model,
                   llm_api_key: config.llm_api_key,
@@ -1293,6 +1309,7 @@ function NexusSection() {
           onFieldChange={handleFieldChange}
           onVerify={(ok, msg) => setTestResult({ ok, model: nexusConfig.llm_model || "?", latency_ms: 0, message: msg })}
         />
+        </>)}
       </div>
 
     </div>
@@ -1762,7 +1779,8 @@ const NEXUS_PROVIDERS: { id: string; label: string; url: string; model: string }
   { id: "xai", label: "xAI", url: "https://api.x.ai", model: "grok-3" },
   { id: "groq", label: "Groq", url: "https://api.groq.com/openai", model: "llama-4-maverick" },
   { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api", model: "openai/gpt-4o" },
-  { id: "ollama", label: "Ollama (本地)", url: "http://localhost:11434", model: "" },
+  { id: "ollama", label: "Ollama (本地)", url: "http://localhost:11434/v1", model: "" },
+  { id: "lmstudio", label: "LM Studio (本地)", url: "http://localhost:1234/v1", model: "" },
 ];
 
 function NexusProviderRow({ nexusConfig, onFieldChange, onVerify }: {
@@ -1782,8 +1800,10 @@ function NexusProviderRow({ nexusConfig, onFieldChange, onVerify }: {
     const model = (nexusConfig?.llm_model || "").trim();
     console.log("[nexus-verify] url:", url, "key:", key ? "***" : "(empty)", "model:", model);
     if (!url) { setResult({ok: false, msg: "请先选择提供商"}); return; }
-    if (!key) { setResult({ok: false, msg: "请填写API Key"}); return; }
     if (!model) { setResult({ok: false, msg: "请填写模型名称"}); return; }
+    // Local providers don't need API key
+    const isLocal = url.includes("localhost") || url.includes("127.0.0.1");
+    if (!key && !isLocal) { setResult({ok: false, msg: "请填写API Key"}); return; }
     setChecking(true); setResult({ok: false, msg: "正在验证..."});
     try {
       const msg = await invoke<string>("verify_api_key", { baseUrl: url, apiKey: key, model });
