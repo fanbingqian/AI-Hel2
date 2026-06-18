@@ -235,10 +235,10 @@ function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, o
   useEffect(() => { detectOllama(); }, [baseUrl, preset?.id]);
 
   const handleVerify = async () => {
-    if (!baseUrl || !apiKey || !selModel) return;
+    if (!baseUrl || !selModel) return;
     setVerifyStatus("checking"); setVerifyMsg("");
     try {
-      const msg = await invoke<string>("verify_api_key", { baseUrl, apiKey, model: selModel });
+      const msg = await invoke<string>("verify_api_key", { baseUrl, apiKey: apiKey || "", model: selModel });
       setVerifyStatus("ok"); setVerifyMsg(msg);
     } catch (e: any) {
       setVerifyStatus("err"); setVerifyMsg(typeof e === "string" ? e : e?.message || "验证失败");
@@ -280,7 +280,7 @@ function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, o
               {selModel && !availModels.includes(selModel) && !detecting && <option value={selModel}>{selModel}</option>}
             </select>
           </div>
-          <button type="button" className={styles.verifyBtn} onClick={handleVerify} disabled={verifyStatus === "checking" || !baseUrl || !apiKey || !selModel}>
+          <button type="button" className={styles.verifyBtn} onClick={handleVerify} disabled={verifyStatus === "checking" || !baseUrl || !selModel}>
             {verifyStatus === "checking" ? "验证中..." : "验证"}
           </button>
         </div>

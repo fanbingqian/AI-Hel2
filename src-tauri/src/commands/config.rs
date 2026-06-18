@@ -89,12 +89,13 @@ pub async fn verify_api_key(
         "messages": [{"role": "user", "content": "hi"}],
         "max_tokens": 5,
     });
-    match client.post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
+    let mut req = client.post(&url)
         .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
+        .json(&body);
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", api_key));
+    }
+    match req.send().await
     {
         Ok(resp) => {
             let status = resp.status();
@@ -104,10 +105,19 @@ pub async fn verify_api_key(
                 Err(format!("API Key 无效 (HTTP {})", status.as_u16()))
             } else {
                 let body = resp.text().await.unwrap_or_default();
-                Err(format!("错误 (HTTP {}): {}", status.as_u16(), body.chars().take(200).collect::<String>()))
+                let preview: String = body.chars().take(300).collect();
+                Err(format!("服务器返回 HTTP {}: {}", status.as_u16(), preview))
             }
         }
-        Err(e) => Err(format!("连接失败: {}", e)),
+        Err(e) => {
+            if e.is_timeout() {
+                Err("连接超时（10秒）— 请确认服务是否启动".into())
+            } else if e.is_connect() {
+                Err(format!("无法连接到 {} — 请确认服务已启动且 URL 正确", url))
+            } else {
+                Err(format!("连接失败: {}", e))
+            }
+        }
     }
 }
 
@@ -277,36 +287,58 @@ pub async fn copy_agent_config_for_nexus(
     state: State<'_, ConfigState>,
 ) -> Result<serde_json::Value, String> {
     let service = state.service.lock().map_err(|e| e.to_string())?;
-    let model_config = service.read_config().unwrap_or_default();
-    let env = service.read_env();
+    let hermes_home = service.hermes_home().to_path_buf();
+    drop(service);
+
+    // Read the default agent from agents.json (same logic as agent_manager + chat)
+    let agents_path = hermes_home.join("agents.json");
     let mut provider = String::new();
+    let mut model = String::new();
     let mut api_key = String::new();
-    for (key, val) in &env {
-        if key.ends_with("_API_KEY") && !val.is_empty() {
-            provider = key.trim_end_matches("_API_KEY").to_lowercase();
-            api_key = val.clone();
-            break;
+    let mut base_url = String::new();
+
+    if let Ok(raw) = std::fs::read_to_string(&agents_path) {
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let default_id = data["default_agent_id"].as_str().unwrap_or("hermes-builtin");
+            if let Some(agents) = data["agents"].as_array() {
+                for a in agents {
+                    if a["id"].as_str() == Some(default_id) && a["enabled"].as_bool().unwrap_or(true) {
+                        let at = a["agent_type"].as_str().unwrap_or("hermes_builtin");
+                        model = a["config"]["models"].as_array()
+                            .and_then(|arr| arr.first())
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("deepseek-v4-flash")
+                            .to_string();
+                        base_url = a["config"]["base_url"].as_str().unwrap_or("").to_string();
+                        api_key = a["config"]["api_key"].as_str().unwrap_or("").to_string();
+                        // Derive provider name from URL as best-effort label
+                        provider = if base_url.contains("deepseek") { "deepseek".to_string() }
+                            else if base_url.contains("openai") { "openai".to_string() }
+                            else if base_url.contains("anthropic") { "anthropic".to_string() }
+                            else if base_url.contains("groq") { "groq".to_string() }
+                            else if base_url.contains("openrouter") { "openrouter".to_string() }
+                            else if base_url.contains("localhost") || base_url.contains("127.0.0.1") { "local".to_string() }
+                            else { at.to_string() };
+                        break;
+                    }
+                }
+            }
         }
     }
-    let base_urls: std::collections::HashMap<&str, &str> = [
-        ("deepseek", "https://api.deepseek.com"),
-        ("openai", "https://api.openai.com"),
-        ("anthropic", "https://api.anthropic.com"),
-        ("aigocode", "https://api.aigocode.com"),
-        ("google", "https://generativelanguage.googleapis.com"),
-        ("xai", "https://api.x.ai"),
-        ("groq", "https://api.groq.com/openai"),
-        ("openrouter", "https://openrouter.ai/api"),
-    ].iter().cloned().collect();
-    let base_url = base_urls.get(provider.as_str()).unwrap_or(&"").to_string();
-    // model.default takes priority over model.name (Hermes gateway reads model.default)
-    let model = if !model_config.model.default.is_empty() {
-        model_config.model.default.clone()
-    } else if !model_config.model.name.is_empty() {
-        model_config.model.name.clone()
-    } else {
-        "deepseek-v4-flash".to_string()
-    };
+
+    // Fallback: read from .env if agents.json didn't provide api_key
+    if api_key.is_empty() {
+        let svc2 = crate::services::config_service::ConfigService::new();
+        let env = svc2.read_env();
+        for (key, val) in &env {
+            if key.ends_with("_API_KEY") && !val.is_empty() && provider.is_empty() {
+                provider = key.trim_end_matches("_API_KEY").to_lowercase();
+                api_key = val.clone();
+                break;
+            }
+        }
+    }
+
     Ok(serde_json::json!({
         "llm_provider": provider,
         "llm_model": model,
