@@ -573,6 +573,7 @@ pub fn run() {
             commands::agent::set_agent_enabled,
             commands::agent::set_default_agent,
             commands::agent::re_detect_agents,
+            commands::agent::fetch_ollama_models,
             commands::agent::update_agent_config,
             commands::agent::openclaw_configure,
             commands::agent::openclaw_start,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAgentRegistry, type AgentInfo } from "../../hooks/useAgentRegistry";
 import { PasswordInput } from "../shared/PasswordInput";
@@ -215,10 +215,24 @@ function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, o
   models: string[]; onModelsChange: (v: string) => void;
 }) {
   const preset = PROVIDER_PRESETS.find(p => p.url === baseUrl);
-  const availModels = preset?.models || models;
+  const [detectedModels, setDetectedModels] = useState<string[]>([]);
+  const [detecting, setDetecting] = useState(false);
+  const availModels = detectedModels.length > 0 ? detectedModels : (preset?.models || models);
   const selModel = models[0] || "";
   const [verifyStatus, setVerifyStatus] = useState<"idle" | "checking" | "ok" | "err">("idle");
   const [verifyMsg, setVerifyMsg] = useState("");
+
+  // Auto-detect local Ollama models when the preset is selected
+  const detectOllama = async () => {
+    if (preset?.id !== "ollama") return;
+    setDetecting(true);
+    try {
+      const list = await invoke<string[]>("fetch_ollama_models", { baseUrl });
+      setDetectedModels(list);
+    } catch { setDetectedModels([]); }
+    setDetecting(false);
+  };
+  useEffect(() => { detectOllama(); }, [baseUrl, preset?.id]);
 
   const handleVerify = async () => {
     if (!baseUrl || !apiKey || !selModel) return;
@@ -261,9 +275,9 @@ function ProviderModelRow({ label, optional, baseUrl, onBaseUrlChange, apiKey, o
           <div style={{ flex: 1 }}>
             <select value={selModel} onChange={(e) => onModelsChange(e.target.value)}
               style={{ width: "100%", padding: "5px 8px", background: "#252525", border: "1px solid #444", borderRadius: 6, color: "#e0e0e0", fontSize: 13 }}>
-              <option value="">{optional ? "不使用" : "选择模型..."}</option>
+              <option value="">{detecting ? "检测中..." : optional ? "不使用" : "选择模型..."}</option>
               {availModels.map(m => <option key={m} value={m}>{m}</option>)}
-              {selModel && !availModels.includes(selModel) && <option value={selModel}>{selModel}</option>}
+              {selModel && !availModels.includes(selModel) && !detecting && <option value={selModel}>{selModel}</option>}
             </select>
           </div>
           <button type="button" className={styles.verifyBtn} onClick={handleVerify} disabled={verifyStatus === "checking" || !baseUrl || !apiKey || !selModel}>

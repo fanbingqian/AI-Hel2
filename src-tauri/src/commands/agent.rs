@@ -120,6 +120,32 @@ pub async fn update_agent_config(
     )
 }
 
+#[tauri::command]
+pub async fn fetch_ollama_models(base_url: String) -> Result<Vec<String>, String> {
+    let url = format!(
+        "{}/api/tags",
+        base_url.trim_end_matches('/').trim_end_matches("/v1")
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    let resp = client.get(&url).send().await
+        .map_err(|e| format!("无法连接 Ollama ({}): {}", url, e))?;
+    let body: serde_json::Value = resp.json().await
+        .map_err(|e| format!("解析 Ollama 响应失败: {e}"))?;
+    let models: Vec<String> = body["models"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|m| m["name"].as_str().map(String::from))
+        .collect();
+    if models.is_empty() {
+        return Err("Ollama 返回了空的模型列表，请确认已拉取模型 (ollama pull <model>)".into());
+    }
+    Ok(models)
+}
+
 // ── OpenClaw lifecycle commands ──
 
 #[tauri::command]
