@@ -409,12 +409,12 @@ impl AgentManager {
         } else if provider == "ollama" {
             "\n    api_key: \"ollama\"".to_string()
         } else { String::new() };
-        // Local models may have small context windows — override Hermes' 64K minimum
-        let ctx_line = if provider == "ollama" || provider == "openai_compatible" {
-            "\n  context_length: 131072"
+        // Local models may have small context windows / output limits
+        let local_override = if provider == "ollama" || provider == "openai_compatible" {
+            "\n  context_length: 131072\n  max_tokens: 8192"
         } else { "" };
         let mut cfg = format!(
-            "model:\n  default: {}\n  provider: {provider}{ctx_line}\
+            "model:\n  default: {}\n  provider: {provider}{local_override}\
              \nmemory:\n  provider: aihel\
              \nproviders:\n  {provider}:\n    base_url: \"{base_clean}\"{ak_line}\
              \n    models:\n      - \"{}\"\
