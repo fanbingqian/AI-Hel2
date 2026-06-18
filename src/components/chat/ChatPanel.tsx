@@ -22,9 +22,11 @@ export function ChatPanel() {
   const chatPanelWidth = useUIStore((s) => s.chatPanelWidth);
   const panelCollapsed = useUIStore((s) => s.panelCollapsed);
   const messages = useChatStore((s) => s.messages);
+  const sessionId = useChatStore((s) => s.sessionId);
   const isLoading = useChatStore((s) => s.isLoading);
   const error = useChatStore((s) => s.error);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const addMessage = useChatStore((s) => s.addMessage);
   const abortChat = useChatStore((s) => s.abortChat);
   const setupListeners = useChatStore((s) => s.setupListeners);
   const toggleSessionList = useUIStore((s) => s.toggleSessionList);
@@ -70,6 +72,19 @@ export function ChatPanel() {
     const cleanup = setupListeners();
     return () => { cleanup.then((fn: () => void) => fn()); };
   }, [setupListeners]);
+
+  // First-launch greeting — fires once when session is fresh and has no messages
+  const greeted = useRef(false);
+  useEffect(() => {
+    if (greeted.current) return;
+    if (sessionId && messages.length === 0 && !isLoading) {
+      greeted.current = true;
+      const hour = new Date().getHours();
+      const timeGreeting = hour < 6 ? "夜深了，注意休息" : hour < 12 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
+      // Auto-send as if the agent greeted the user
+      addMessage("assistant", `${timeGreeting}，欢迎使用 AI-Hel2 伴随式智能体`);
+    }
+  }, [sessionId, messages.length, isLoading]);
 
   // Scroll to bottom: instant during streaming (content height changing
   // rapidly), smooth only when a new message appears.  Prevents the jitter
