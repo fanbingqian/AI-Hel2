@@ -63,6 +63,15 @@ pub struct AgentManager {
     resource_dir: Mutex<Option<PathBuf>>,
 }
 
+struct AgentRuntime {
+    agent_type: String,
+    main_model: String,
+    base_url: String,
+    api_key: Option<String>,
+    vision_model: Option<String>,
+    reasoning_model: Option<String>,
+}
+
 impl AgentManager {
     pub fn new(hermes_home: &std::path::Path) -> Self {
         let port = read_agent_port(hermes_home);
@@ -331,9 +340,7 @@ impl AgentManager {
         None
     }
 
-    /// Read the default agent config from agents.json to drive Hermes config generation.
-    fn resolve_agent_runtime(&self) -> (String, String, String, Option<String>) {
-        // (agent_type, model, base_url, api_key)
+    fn resolve_agent_runtime(&self) -> AgentRuntime {
         let agents_path = self.hermes_home.join("agents.json");
         if let Ok(raw) = std::fs::read_to_string(&agents_path) {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) {
@@ -346,40 +353,67 @@ impl AgentManager {
                             let at = agent["agent_type"].as_str().unwrap_or("hermes_builtin");
                             let bu = agent["config"]["base_url"].as_str().unwrap_or("");
                             let ak = agent["config"]["api_key"].as_str().map(String::from);
-                            let ms: Vec<String> = agent["config"]["models"].as_array()
-                                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                                .unwrap_or_default();
-                            let m = ms.first().cloned().unwrap_or_else(|| "deepseek-v4-flash".into());
-                            return (at.to_string(), m, bu.to_string(), ak);
+                            let get_models = |key: &str| -> Option<String> {
+                                agent["config"][key].as_array()
+                                    .and_then(|a| a.first())
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from)
+                            };
+                            let mm = get_models("models");
+                            let vm = get_models("vision_models");
+                            let rm = get_models("reasoning_models");
+                            return AgentRuntime {
+                                agent_type: at.to_string(),
+                                main_model: mm.unwrap_or_else(|| "deepseek-v4-flash".into()),
+                                base_url: bu.to_string(),
+                                api_key: ak,
+                                vision_model: vm,
+                                reasoning_model: rm,
+                            };
                         }
                     }
                 }
             }
         }
-        ("hermes_builtin".into(), "deepseek-v4-flash".into(), "".into(), None)
+        AgentRuntime {
+            agent_type: "hermes_builtin".into(),
+            main_model: "deepseek-v4-flash".into(),
+            base_url: "".into(),
+            api_key: None,
+            vision_model: None,
+            reasoning_model: None,
+        }
     }
 
-    /// Build a Hermes config.yaml for the given provider/model.
-    fn build_hermes_config(provider: &str, model: &str, base_url: &str, api_key: &Option<String>) -> String {
-        let base = if base_url.is_empty() {
+    fn build_hermes_config(rt: &AgentRuntime) -> String {
+        let provider = if rt.agent_type == "hermes_builtin" {
+            if rt.base_url.contains("deepseek") { "deepseek" }
+            else if rt.base_url.contains("openai") { "openai" }
+            else if rt.base_url.contains("anthropic") { "anthropic" }
+            else if rt.base_url.contains("openrouter") { "openrouter" }
+            else if rt.base_url.contains("groq") { "groq" }
+            else if rt.base_url.contains("localhost") || rt.base_url.contains("127.0.0.1") { "ollama" }
+            else { "openai_compatible" }
+        } else { "ollama" }; // openai_compatible agents are always local/ollama-style
+        let base_clean = if rt.base_url.is_empty() {
             match provider {
                 "deepseek" => "https://api.deepseek.com/v1",
                 "openai" => "https://api.openai.com/v1",
-                "anthropic" => "https://api.anthropic.com",
                 "openrouter" => "https://openrouter.ai/api/v1",
                 "groq" => "https://api.groq.com/openai/v1",
-                _ => base_url,
+                _ => rt.base_url.as_str(),
             }
-        } else { base_url };
-        let base_clean = base.trim_end_matches('/');
-        let ak_line = if let Some(key) = api_key {
+        } else { rt.base_url.trim_end_matches('/') };
+        let ak_line = if let Some(ref key) = rt.api_key {
             format!("\n    api_key: \"{key}\"")
+        } else if provider == "ollama" {
+            "\n    api_key: \"ollama\"".to_string()
         } else { String::new() };
-        format!(
-            "model:\n  default: {model}\n  provider: {provider}\
+        let mut cfg = format!(
+            "model:\n  default: {}\n  provider: {provider}\
              \nmemory:\n  provider: aihel\
              \nproviders:\n  {provider}:\n    base_url: \"{base_clean}\"{ak_line}\
-             \n    models:\n      - \"{model}\"\
+             \n    models:\n      - \"{}\"\
              \nsystem_prompt_append: |\n  ## 你的知识库\
              \n  你连接了 AI-Hel2 本地知识库（Nexus 知识引擎），拥有以下知识管理工具：\
              \n  - aihel_search — 搜索知识图谱中的实体（概念、项目、人物、地名等）\
@@ -388,8 +422,17 @@ impl AgentManager {
              \n  - aihel_read_wiki — 读取文档全文\
              \n  - aihel_save — 将重要知识保存为 Markdown 文档\
              \n  当用户询问需要背景知识的问题时，先用 aihel_search 查本地知识库再回答。\
-             \n  用户让你\"记住\"、\"保存\"、\"记录下来\"时，用 aihel_save 写入知识库。\n"
-        )
+             \n  用户让你\"记住\"、\"保存\"、\"记录下来\"时，用 aihel_save 写入知识库。\n",
+            rt.main_model, rt.main_model,
+        );
+        // Append vision/reasoning model configs if present
+        if let Some(ref vm) = rt.vision_model {
+            cfg.push_str(&format!("\nvision:\n  model: \"{vm}\"\n"));
+        }
+        if let Some(ref rm) = rt.reasoning_model {
+            cfg.push_str(&format!("\nreasoning:\n  model: \"{rm}\"\n"));
+        }
+        cfg
     }
 
     /// Spawn the agent gateway process.
@@ -446,20 +489,17 @@ impl AgentManager {
         // Agent data nested under AI-Hel2's data directory: {AI_HEL2_HOME}/hermes
         let agent_home = self.hermes_home.join("hermes");
         let _ = std::fs::create_dir_all(&agent_home);
-        let (agent_type, model, base_url, api_key) = self.resolve_agent_runtime();
-        let provider = if agent_type == "hermes_builtin" {
-            // Derive provider name from base_url
-            if base_url.contains("deepseek") { "deepseek" }
-            else if base_url.contains("openai") { "openai" }
-            else if base_url.contains("anthropic") { "anthropic" }
-            else if base_url.contains("openrouter") { "openrouter" }
-            else if base_url.contains("groq") { "groq" }
-            else if base_url.contains("google") || base_url.contains("gemini") { "gemini" }
-            else { "openai_compatible" }
-        } else { "openai_compatible" };
+        let rt = self.resolve_agent_runtime();
+        let provider = if rt.base_url.contains("deepseek") { "deepseek" }
+            else if rt.base_url.contains("openai") { "openai" }
+            else if rt.base_url.contains("anthropic") { "anthropic" }
+            else if rt.base_url.contains("openrouter") { "openrouter" }
+            else if rt.base_url.contains("groq") { "groq" }
+            else if rt.base_url.contains("localhost") || rt.base_url.contains("127.0.0.1") { "ollama" }
+            else { "openai_compatible" };
+        let model = &rt.main_model;
         let agent_config = agent_home.join("config.yaml");
-        // Always regenerate config.yaml from the current default agent (model may have changed)
-        let config_yaml = Self::build_hermes_config(provider, &model, &base_url, &api_key);
+        let config_yaml = Self::build_hermes_config(&rt);
         let _ = std::fs::write(&agent_config, &config_yaml);
         // Pass AI_HEL2_HOME so the aihel plugin knows where data lives
         cmd.env("AI_HEL2_HOME", self.hermes_home.to_str().unwrap_or("."));
