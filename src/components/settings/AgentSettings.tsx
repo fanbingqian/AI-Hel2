@@ -300,8 +300,8 @@ const PROVIDER_PRESETS = [
   { label: "xAI Grok", id: "xai", name: "xAI", url: "https://api.x.ai", models: ["grok-3"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
   { label: "Groq", id: "groq", name: "Groq", url: "https://api.groq.com/openai", models: ["llama-4-maverick", "llama-3.3-70b", "mixtral-8x7b"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
   { label: "OpenRouter", id: "openrouter", name: "OpenRouter", url: "https://openrouter.ai/api", models: ["openai/gpt-4o", "anthropic/claude-sonnet-4-6"], visionModels: [], reasoningModels: [], type: "openai_compatible" },
-  { label: "Ollama (本地)", id: "ollama", name: "Ollama", url: "http://localhost:11434", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
-  { label: "LM Studio (本地)", id: "lmstudio", name: "LM Studio", url: "http://localhost:1234", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "Ollama (本地)", id: "ollama", name: "Ollama", url: "http://localhost:11434/v1", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
+  { label: "LM Studio (本地)", id: "lmstudio", name: "LM Studio", url: "http://localhost:1234/v1", models: [], visionModels: [], reasoningModels: [], type: "openai_compatible" },
 ];
 
 // Keep existing MODEL_SUGGESTIONS for backward compatibility, but presets take priority
