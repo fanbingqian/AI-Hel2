@@ -14,7 +14,7 @@ const MODEL_SUGGESTIONS = [
 ];
 
 export function AgentSettings() {
-  const { agents, loading, reDetect, addAgent, removeAgent, setEnabled, setDefault, refresh } = useAgentRegistry();
+  const { agents, activeAgentId, loading, reDetect, addAgent, removeAgent, setEnabled, setDefault, refresh } = useAgentRegistry();
   const [showAdd, setShowAdd] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState<string | null>(null);
@@ -59,7 +59,8 @@ export function AgentSettings() {
             agent={agent}
             onToggle={(enabled) => setEnabled(agent.id, enabled)}
             onRemove={() => { removeAgent(agent.id); refresh(); }}
-            onSetDefault={() => setDefault(agent.id)}
+            isDefault={activeAgentId === agent.id}
+	            onSetDefault={async () => { await setDefault(agent.id); try { await invoke("restart_agent"); } catch (_) {} }}
             onRefresh={refresh}
           />
         ))}
@@ -75,8 +76,9 @@ export function AgentSettings() {
   );
 }
 
-function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
+function AgentRow({ agent, isDefault, onToggle, onRemove, onSetDefault, onRefresh }: {
   agent: AgentInfo;
+  isDefault: boolean;
   onToggle: (enabled: boolean) => void;
   onRemove: () => void;
   onSetDefault: () => void;
@@ -130,6 +132,10 @@ function AgentRow({ agent, onToggle, onRemove, onSetDefault, onRefresh }: {
       await writeKey(reasoningBaseUrl, reasoningApiKey);
       setSaveMsg("ok");
       onRefresh();
+      // If we saved the default agent, restart Hermes Gateway so the new config takes effect
+      if (isDefault) {
+        try { await invoke("restart_agent"); } catch (_) {}
+      }
     } catch (e: any) {
       setSaveMsg(typeof e === "string" ? e : e?.message || "保存失败");
     } finally {
