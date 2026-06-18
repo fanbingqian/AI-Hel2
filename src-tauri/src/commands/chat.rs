@@ -144,13 +144,104 @@ fn convert_messages(msgs: Vec<ChatMessage>) -> Vec<crate::services::hermes_agent
 pub async fn chat_completions(
     app: AppHandle,
     legacy_state: State<'_, AgentState>,
+    registry_state: State<'_, AgentRegistryState>,
     messages: Vec<ChatMessage>,
     model: Option<String>,
     session_id: Option<String>,
 ) -> Result<(), String> {
-    let model = model.filter(|m| !m.is_empty()).unwrap_or_else(|| "deepseek-v4-flash".into());
+    // Read default agent config from agents.json (AgentInfo is sanitized, no base_url)
+    let (agent_type, default_model, base_url) = resolve_default_agent();
+    let model = model.filter(|m| !m.is_empty()).unwrap_or(default_model);
     let hermes_msgs = convert_messages(messages);
-    run_hermes_chat(&app, &legacy_state, hermes_msgs, &model, session_id).await
+
+    if agent_type == "openai_compatible" && !base_url.is_empty() {
+        run_openai_compatible_chat(&app, &model, &base_url, hermes_msgs, session_id).await
+    } else {
+        run_hermes_chat(&app, &legacy_state, hermes_msgs, &model, session_id).await
+    }
+}
+
+fn resolve_default_agent() -> (String, String, String) {
+    let path = std::path::PathBuf::from(
+        std::env::var("AI_HEL2_HOME").unwrap_or_else(|_| {
+            std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()) + "/.ai-hel2"
+        })
+    ).join("agents.json");
+    if let Ok(raw) = std::fs::read_to_string(&path) {
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let default_id = data["default_agent_id"].as_str().unwrap_or("hermes-builtin");
+            if let Some(agents) = data["agents"].as_array() {
+                for a in agents {
+                    if a["id"].as_str() == Some(default_id) && a["enabled"].as_bool().unwrap_or(true) {
+                        let at = a["agent_type"].as_str().unwrap_or("hermes_builtin");
+                        let bu = a["config"]["base_url"].as_str().unwrap_or("");
+                        let ms: Vec<_> = a["config"]["models"].as_array()
+                            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                            .unwrap_or_default();
+                        let m = ms.first().copied().unwrap_or("deepseek-v4-flash");
+                        return (at.to_string(), m.to_string(), bu.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ("hermes_builtin".into(), "deepseek-v4-flash".into(), String::new())
+}
+
+async fn run_openai_compatible_chat(
+    app: &AppHandle,
+    model: &str,
+    base_url: &str,
+    messages: Vec<crate::services::hermes_agent::ChatMessage>,
+    _session_id: Option<String>,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "messages": messages.iter().map(|m| serde_json::json!({
+            "role": m.role, "content": m.content
+        })).collect::<Vec<_>>(),
+        "stream": true
+    });
+    let resp = client.post(&url).json(&body).send().await
+        .map_err(|e| format!("连接本地模型失败 ({}): {}", url, e))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("本地模型返回错误 HTTP {}: {}", status, text));
+    }
+    let mut stream = resp.bytes_stream();
+    let mut buf = Vec::new();
+    let mut received = false;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("流读取失败: {e}"))?;
+        buf.extend_from_slice(&chunk);
+        while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buf[..nl]).to_string();
+            buf.drain(..=nl);
+            if line.starts_with("data: ") {
+                let data = line[6..].trim().to_string();
+                if data == "[DONE]" { break; }
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&data) {
+                    if let Some(content) = parsed["choices"][0]["delta"]["content"].as_str() {
+                        received = true;
+                        let _ = app.emit("chat:delta", StreamDelta {
+                            content: content.to_string(),
+                            reasoning_content: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if received {
+        let _ = app.emit("chat:done", StreamDone { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, session_id: None });
+    } else {
+        let _ = app.emit("chat:error", StreamError { message: "本地模型未返回内容".into(), retryable: true });
+    }
+    let _ = app.emit("agent:status", serde_json::json!({ "working": false }));
+    Ok(())
 }
 
 async fn run_hermes_chat(
