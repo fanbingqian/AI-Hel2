@@ -86,9 +86,11 @@ impl KnowledgeService {
         let mut existing_files: std::collections::HashSet<String> = std::collections::HashSet::new();
         self.collect_md_files(&self.wiki_dir, &mut existing_files);
 
-        // Phase 2: Extract/re-extract entities from each file via Nexus (LLM extraction)
+        // Phase 2: Ensure document nodes exist for all .md files (regex-only on startup).
+        // LLM extraction is deferred to FileWatcher or manual "force re-extract" to avoid
+        // consuming API credits on every app restart for files that haven't changed.
         for file_path in &existing_files {
-            match self.nexus_extract_from_file(file_path, None) {
+            match self.scan_ensure_document_node(file_path) {
                 Ok(result) => {
                     scanned += 1;
                     total_new += result.entity_count;
@@ -120,6 +122,57 @@ impl KnowledgeService {
             stale_relations_removed: stale_relations,
             errors,
         })
+    }
+
+    /// Startup-only: ensure a document entity exists for a .md file.
+    /// Uses regex extraction only (no LLM/API calls) — content hash is registered
+    /// so the FileWatcher won't re-trigger extraction unless the file changes.
+    fn scan_ensure_document_node(&self, file_path: &str) -> Result<NexusStoreResult, String> {
+        let content = std::fs::read_to_string(file_path)
+            .map_err(|e| format!("读取文件失败: {e}"))?;
+        let mut hasher = sha2::Sha256::new();
+        use sha2::Digest;
+        hasher.update(content.as_bytes());
+        let hash = format!("{:x}", hasher.finalize());
+
+        // Skip if already indexed with same hash
+        if let Ok(db) = self.cache_db.lock() {
+            let existing: Option<String> = db.query_row(
+                "SELECT content_hash FROM cache_content_index WHERE source_path = ?1",
+                rusqlite::params![file_path],
+                |row| row.get(0),
+            ).ok();
+            if existing.as_deref() == Some(&hash) {
+                return Ok(NexusStoreResult { entity_count: 0, relation_count: 0, skipped: true });
+            }
+            // Register content hash (without LLM extraction timestamp)
+            db.execute(
+                "INSERT OR REPLACE INTO cache_content_index (source_path, content_hash, source_type) VALUES (?1, ?2, 'wiki')",
+                rusqlite::params![file_path, hash],
+            ).ok();
+        }
+
+        // Create document entity node only (regex-based, zero API cost)
+        // The file name without extension becomes the document entity name
+        let path = std::path::Path::new(file_path);
+        let doc_name = path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_path);
+        let doc_id = uuid::Uuid::new_v5(&WIKI_NAMESPACE, doc_name.to_lowercase().as_bytes()).to_string();
+        let namespace = path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("wiki");
+
+        if let Ok(db) = self.cache_db.lock() {
+            let now = chrono::Utc::now().to_rfc3339();
+            db.execute(
+                "INSERT OR REPLACE INTO cache_entities (id, name, entity_type, description, namespace, source_file, llm_confidence, hidden, updated_at) VALUES (?1, ?2, '__file__', ?3, ?4, ?5, 0.5, 0, ?6)",
+                rusqlite::params![doc_id, doc_name, format!("文档: {doc_name}"), namespace, file_path, now],
+            ).ok();
+        }
+
+        Ok(NexusStoreResult { entity_count: 1, relation_count: 0, skipped: false })
     }
 
     /// Collect all .md file paths (absolute) recursively under a directory.
@@ -2535,11 +2588,8 @@ impl KnowledgeService {
     // ── Document Summarization & Image Description (§5) ──
 
     /// Path to file_tools.py (document text extraction + image base64 encoding).
-    fn file_tools_script() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("services")
-            .join("file_tools.py")
+    fn file_tools_script(&self) -> PathBuf {
+        self.python_script_path("file_tools.py")
     }
 
     /// Call file_tools.py and return parsed JSON.
@@ -2549,7 +2599,7 @@ impl KnowledgeService {
         action: &str,
         path: &Path,
     ) -> Result<serde_json::Value, String> {
-        let script = Self::file_tools_script();
+        let script = self.file_tools_script();
         if !script.exists() {
             return Err("file_tools.py not found".into());
         }
