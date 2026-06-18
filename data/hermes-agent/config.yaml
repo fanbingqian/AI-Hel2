@@ -24,7 +24,6 @@ model:
 # DeepSeek Provider Configuration
 # =============================================================================
 deepseek:
-  api_key: "sk-43fc65fd28bb449082f98fd34b44a71e"
   base_url: "https://api.deepseek.com/v1"
   
   # Optional parameters
