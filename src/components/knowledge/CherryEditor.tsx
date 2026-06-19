@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useId } from "react";
 import Cherry from "cherry-markdown";
 import "cherry-markdown/dist/cherry-markdown.css";
 import { emit } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import * as api from "../../services/api";
 import { readWikiFileBase64 } from "../../services/wiki";
 import styles from "./CherryEditor.module.css";
@@ -289,6 +290,58 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleSave]);
+
+  // Paste/drop image insertion
+  const insertImage = useCallback(async (blob: Blob, name: string) => {
+    if (!filePath) return;
+    const dir = filePath.replace(/\/[^/]+$/, "");
+    const ext = name.split(".").pop() || "png";
+    const ts = Date.now();
+    const imgName = `${dir}/img_${ts}.${ext}`;
+    try {
+      const buf = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let b64 = "";
+      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+      b64 = btoa(b64);
+      await invoke("write_wiki_file_base64", { path: imgName, data: b64 });
+      const md = cherryRef.current?.getMarkdown() || "";
+      cherryRef.current?.setMarkdown(md + `\n![${name}](${imgName})\n`);
+      setDirty(true);
+    } catch (e) {
+      console.error("Insert image failed:", e);
+    }
+  }, [filePath]);
+
+  useEffect(() => {
+    if (!containerRef.current || !filePath) return;
+    const el = containerRef.current;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          e.preventDefault();
+          const blob = items[i].getAsFile();
+          if (blob) insertImage(blob, `paste_${Date.now()}.png`);
+          break;
+        }
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+      for (let i = 0; i < files.length; i++) {
+        if (files[i].type.startsWith("image/")) {
+          e.preventDefault();
+          insertImage(files[i], files[i].name);
+        }
+      }
+    };
+    el.addEventListener("paste", onPaste);
+    el.addEventListener("drop", onDrop);
+    return () => { el.removeEventListener("paste", onPaste); el.removeEventListener("drop", onDrop); };
+  }, [filePath, insertImage]);
 
   const fileName = filePath ? filePath.split("/").pop() ?? filePath : null;
 

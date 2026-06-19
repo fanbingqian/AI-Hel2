@@ -521,6 +521,7 @@ pub fn run() {
             commands::wiki::list_wiki_dirs,
             commands::wiki::list_all_knowledge_files,
             commands::wiki::read_wiki_file_base64,
+            commands::wiki::write_wiki_file_base64,
             commands::wiki::show_in_folder,
             commands::wiki::upload_wiki_file,
             commands::wiki::upload_wiki_files,

@@ -115,6 +115,8 @@ export default function AiHelPage() {
         setMainContentMode("canvas");
       } else if (path.endsWith(".md") || fileKind === "md") {
         setMainContentMode("editor");
+      } else {
+        setMainContentMode("preview");
       }
     },
     [setOpenFilePath, setMainContentMode],

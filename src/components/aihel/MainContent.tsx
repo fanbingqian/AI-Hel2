@@ -7,6 +7,7 @@ import { LintPanel } from "../sphere/LintPanel";
 import { EntityListPanel } from "../sphere/EntityListPanel";
 import { CherryEditor } from "../knowledge/CherryEditor";
 import { EntityBrowser } from "../knowledge/EntityBrowser";
+import { FilePreview } from "../knowledge/FilePreview";
 import CanvasPage from "../canvas/CanvasPage";
 import styles from "./AiHelPage.module.css";
 
@@ -23,8 +24,18 @@ export function MainContent({ mode, filePath, onFileOpen, onCloseFile }: Props) 
   const showLintPanel = useKnowledgeStore((s) => s.showLintPanel);
   const showEntityList = useKnowledgeStore((s) => s.showEntityList);
 
+  // Preview mode (images, PDF, Office files)
+  if (mode === "preview" && filePath) {
+    return (
+      <div className={styles.mainInner}>
+        <FilePreview filePath={filePath} />
+        <button type="button" className={styles.closeFileBtn} onClick={onCloseFile} title="关闭文件">×</button>
+      </div>
+    );
+  }
+
   // Graph mode (default)
-  if (mode === "graph2d" || (!filePath && mode !== "editor" && mode !== "canvas" && mode !== "entity")) {
+  if (mode === "graph2d" || (!filePath && mode !== "editor" && mode !== "canvas" && mode !== "entity" && mode !== "preview")) {
     return (
       <div className={styles.mainInner}>
         <ForceGraph2DWrapper />

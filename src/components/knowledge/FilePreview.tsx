@@ -5,8 +5,13 @@ import styles from "./FilePreview.module.css";
 
 interface Props {
   filePath: string;
-  fileKind: string | null;
-  fileName: string;
+}
+
+function computeFileKind(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  return /^(png|jpg|jpeg|gif|svg|webp|bmp|ico|tiff)$/.test(ext) ? "image" :
+    ext === "pdf" ? "pdf" :
+    /^(docx|xlsx|pptx)$/.test(ext) ? "convertible" : "static";
 }
 
 function base64ToBlobUrl(base64: string, mime: string): string {
@@ -19,7 +24,9 @@ function base64ToBlobUrl(base64: string, mime: string): string {
   return URL.createObjectURL(blob);
 }
 
-export function FilePreview({ filePath, fileKind, fileName }: Props) {
+export function FilePreview({ filePath }: Props) {
+  const fileName = filePath.split("/").pop() || filePath;
+  const fileKind = computeFileKind(fileName);
   const [base64, setBase64] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const blobUrlRef = useRef<string | null>(null);

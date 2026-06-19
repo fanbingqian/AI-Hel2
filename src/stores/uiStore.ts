@@ -10,7 +10,7 @@ export interface AgentStatus {
   error: string | null;
 }
 
-export type MainContentMode = "graph2d" | "editor" | "canvas" | "entity";
+export type MainContentMode = "graph2d" | "editor" | "canvas" | "entity" | "preview";
 
 interface UIState {
   activePage: PageId;

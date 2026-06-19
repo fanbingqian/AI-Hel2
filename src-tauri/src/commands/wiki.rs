@@ -150,6 +150,22 @@ pub async fn upload_wiki_file(
 }
 
 #[tauri::command]
+pub async fn write_wiki_file_base64(
+    state: State<'_, WikiState>,
+    path: String,
+    data: String,
+) -> Result<(), String> {
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &data,
+    ).map_err(|e| format!("Base64 decode failed: {e}"))?;
+    let service = state.service.lock().map_err(|e| e.to_string())?;
+    let full = service.resolve_path(&path).map_err(|e| e.to_string())?;
+    if let Some(p) = full.parent() { std::fs::create_dir_all(p).ok(); }
+    std::fs::write(&full, &bytes).map_err(|e| format!("写入二进制文件失败: {e}"))
+}
+
+#[tauri::command]
 pub async fn read_wiki_file_base64(
     state: State<'_, WikiState>,
     path: String,
