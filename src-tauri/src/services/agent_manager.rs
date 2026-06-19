@@ -505,6 +505,9 @@ impl AgentManager {
         let agent_config = agent_home.join("config.yaml");
         let config_yaml = Self::build_hermes_config(&rt);
         let _ = std::fs::write(&agent_config, &config_yaml);
+        // Force UTF-8 encoding so emoji tool labels don't crash on Windows GBK terminals
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
         // Pass AI_HEL2_HOME so the aihel plugin knows where data lives
         cmd.env("AI_HEL2_HOME", self.hermes_home.to_str().unwrap_or("."));
         cmd.env("HERMES_HOME", agent_home.to_str().unwrap_or("."));

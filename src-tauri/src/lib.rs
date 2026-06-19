@@ -542,6 +542,8 @@ pub fn run() {
             commands::config::get_nexus_config,
             commands::config::save_nexus_config,
             commands::config::check_nexus_llm_connection,
+            commands::config::check_update,
+            commands::config::download_update,
             // Auth
             commands::auth::register_user,
             commands::auth::login_user,

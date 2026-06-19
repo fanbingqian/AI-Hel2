@@ -1,7 +1,7 @@
 use std::fs;
 use std::sync::Mutex;
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::services::config_service::ConfigService;
 
@@ -456,4 +456,54 @@ pub async fn check_nexus_llm_connection(
             }))
         }
     }
+}
+
+#[derive(Clone, serde::Serialize)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: u64,
+    percent: f64,
+}
+
+#[tauri::command]
+pub async fn check_update() -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+    let url = "https://github.com/fanbingqian/AI-Hel2/releases/latest/download/latest.json";
+    let resp = client.get(url).send().await
+        .map_err(|e| format!("检查更新失败: {e}"))?;
+    let body: serde_json::Value = resp.json().await
+        .map_err(|e| format!("解析更新信息失败: {e}"))?;
+    Ok(body)
+}
+
+#[tauri::command]
+pub async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    use futures::StreamExt;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(1800))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+    let resp = client.get(&url).send().await
+        .map_err(|e| format!("下载失败: {e}"))?;
+    let total = resp.content_length().unwrap_or(0);
+    let mut stream = resp.bytes_stream();
+    let mut downloaded: u64 = 0;
+    let mut buf = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("下载中断: {e}"))?;
+        buf.extend_from_slice(&chunk);
+        downloaded += chunk.len() as u64;
+        if total > 0 {
+            let percent = (downloaded as f64 / total as f64) * 100.0;
+            let _ = app.emit("update:progress", UpdateProgress { downloaded, total, percent });
+        }
+    }
+    let tmp = std::env::temp_dir().join(format!("AI-Hel2_update_{}.exe", std::process::id()));
+    std::fs::write(&tmp, &buf).map_err(|e| format!("写入临时文件失败: {e}"))?;
+    std::process::Command::new(&tmp).spawn().map_err(|e| format!("启动安装程序失败: {e}"))?;
+    let _ = app.emit("update:done", serde_json::json!({"installing": true}));
+    Ok(tmp.to_string_lossy().to_string())
 }
