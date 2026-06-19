@@ -6626,6 +6626,37 @@ impl KnowledgeService {
             }
         }
 
+        // Step 6: For non-.md uploads (pdf, docx, images), auto-generate MD summary
+        // and extract it to the knowledge graph.
+        if ext != "md" && !text.is_empty() {
+            let md_path = target_dir.join(format!("{}.md", new_name));
+            match self.run_summarize_service(python_str, text, &ext, file_name) {
+                Ok(summary) if !summary.trim().is_empty() => {
+                    let md_content = format!(
+                        "---\ntitle: {}\ntags: {}\nsource: {}\n---\n\n{}\n",
+                        title,
+                        tags.join(" "),
+                        new_relative,
+                        summary.trim(),
+                    );
+                    if std::fs::write(&md_path, &md_content).is_ok() {
+                        let md_rel = md_path.strip_prefix(&self.wiki_dir)
+                            .unwrap_or(&md_path)
+                            .to_str().unwrap_or("")
+                            .replace('\\', "/");
+                        log::info!("[classify] Generated MD summary: {}", md_rel);
+                        // Trigger entity extraction on the new MD
+                        if let Ok(db) = self.cache_db.lock() {
+                            drop(db);
+                            let _ = self.nexus_extract_from_file(&md_rel, None);
+                        }
+                    }
+                }
+                Err(e) => log::warn!("[classify] MD generation skipped (summary failed): {e}"),
+                _ => {}
+            }
+        }
+
         Ok(serde_json::json!({
             "folder": folder,
             "title": title,
