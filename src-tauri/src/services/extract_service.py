@@ -410,22 +410,49 @@ def build_classify_prompt(text, file_type, file_name, existing_dirs):
 请输出 JSON："""
     return prompt
 
-def build_summarize_prompt(text, file_type, file_name):
-    """Build a summarization prompt for documents."""
-    # Truncate very long texts
-    max_chars = 12000
-    truncated = text[:max_chars]
-    truncation_note = ""
-    if len(text) > max_chars:
-        truncation_note = f"\n(原文共 {len(text)} 字符，已截取前 {max_chars} 字符)"
+def chunk_text(text, max_chars=12000):
+    """Split long text into chunks at paragraph/sentence boundaries.
+    Uses LangChain if available, otherwise falls back to hard truncation."""
+    if len(text) <= max_chars:
+        return [text]
+    try:
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=max_chars,
+            chunk_overlap=int(max_chars * 0.1),  # 10% overlap
+            separators=["\n\n", "\n", "。", "！", "？", "；", ". ", "!", "?", ";", " ", ""],
+            keep_separator=True,
+        )
+        chunks = splitter.split_text(text)
+        if chunks:
+            return chunks
+    except ImportError:
+        pass
+    # Fallback: hard truncation at nearest paragraph boundary
+    cutoff = text.rfind("\n\n", 0, max_chars)
+    if cutoff > max_chars // 2:
+        return [text[:cutoff]]
+    return [text[:max_chars]]
 
-    prompt = f"""## 角色
+
+def build_summarize_prompt(text, file_type, file_name):
+    """Build a summarization prompt for documents.
+    For long documents, returns a list of prompts (one per chunk)."""
+    max_chars = 12000
+    chunks = chunk_text(text, max_chars)
+    is_chunked = len(chunks) > 1
+
+    prompts = []
+    for i, chunk in enumerate(chunks):
+        chunk_info = f" (第 {i+1}/{len(chunks)} 部分)" if is_chunked else ""
+        note = f"\n(原文共 {len(text)} 字符)" if i == 0 and is_chunked else ""
+        prompt = f"""## 角色
 你是 Nexus 知识引擎的文档分析助手。
 
 你的任务是：将文档内容总结为结构化的 Markdown，保留关键信息供知识图谱索引。
 
 ## 文件名
-{file_name}
+{file_name}{chunk_info}{note}
 
 ## 要求
 1. 用 ## 标题作为文档标题
@@ -436,12 +463,13 @@ def build_summarize_prompt(text, file_type, file_name):
 6. 输出纯 Markdown，不要 JSON，不要代码块包裹
 7. 控制在 500-2000 字
 
-## 原文内容{truncation_note}
-{truncated}
+## 原文内容
+{chunk}
 
 请输出 Markdown 摘要："""
+        prompts.append(prompt)
 
-    return prompt
+    return prompts if is_chunked else prompts[0]
 
 
 def build_image_description_prompt(image_count, batch_title=""):
@@ -604,8 +632,33 @@ def main():
             sys.exit(0)
         print(f"[Nexus] Summarize: {len(text)} chars, type={args.file_type}", file=sys.stderr)
         prompt = build_summarize_prompt(text, args.file_type, args.file_name)
-        messages = [{"role": "user", "content": prompt}]
-        response_text, error = call_llm(messages, config)
+        # Handle chunked prompts for long documents (returns list if chunked)
+        if isinstance(prompt, list):
+            chunk_summaries = []
+            for i, p in enumerate(prompt):
+                msg = [{"role": "user", "content": p}]
+                resp, err = call_llm(msg, config)
+                if err:
+                    print(f"[Nexus] Summarize chunk {i+1}/{len(prompt)} error: {err}", file=sys.stderr)
+                    continue
+                chunk_summaries.append(resp)
+                print(f"[Nexus] Chunk {i+1}/{len(prompt)}: {len(resp)} chars", file=sys.stderr)
+            # Merge chunk summaries
+            if not chunk_summaries:
+                sys.exit(1)
+            merge_prompt = f"""将以下文档各部分的摘要合并为一个完整总结：
+
+{'---'.join(chunk_summaries)}
+
+合并要求：
+1. 去重：删除重复的要点
+2. 组织结构：按主题用 ## 和 ### 标题组织
+3. 保留所有重要数据、日期、人名、术语
+4. 输出完整的 Markdown"""
+            response_text, error = call_llm([{"role": "user", "content": merge_prompt}], config)
+        else:
+            messages = [{"role": "user", "content": prompt}]
+            response_text, error = call_llm(messages, config)
         if error:
             print(f"[Nexus] Summarize error: {error}", file=sys.stderr)
             sys.exit(1)

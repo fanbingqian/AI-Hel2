@@ -6567,6 +6567,7 @@ impl KnowledgeService {
 
         let python = Self::find_python();
         let python_str = python.to_str().unwrap_or("python");
+        log::info!("[classify] file={} ext={} python={}", file_path, ext, python.display());
 
         // Step 1: Extract text
         let ft_json = self.run_file_tools(python_str, "extract", &full_path)?;

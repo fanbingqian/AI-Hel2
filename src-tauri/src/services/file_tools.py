@@ -15,8 +15,31 @@ import io
 sys.stdout.reconfigure(encoding="utf-8")
 
 
+def extract_markitdown(path):
+    """Try Microsoft MarkItDown for unified DOCX/PPTX/PDF/XLSX → Markdown.
+    Returns Markdown text on success, None if not installed or conversion fails."""
+    try:
+        from markitdown import MarkItDown
+        md = MarkItDown()
+        result = md.convert(path)
+        if result and result.text_content and result.text_content.strip():
+            return result.text_content.strip()
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return None
+
+
 def extract_pdf(path):
-    """Extract text from PDF using pdfplumber (preferred) or PyPDF2 (fallback)."""
+    """Extract text from PDF using MarkItDown (preferred), pdfplumber, or PyPDF2."""
+    # Try MarkItDown first (best quality: Markdown output)
+    md_text = extract_markitdown(path)
+    if md_text:
+        pages = md_text.count("\n\n") + 1
+        return md_text, max(pages, 1), None
+
+    # Fallback to pdfplumber / PyPDF2
     text_parts = []
     pages = 0
     try:
@@ -49,7 +72,11 @@ def extract_pdf(path):
 
 
 def extract_docx(path):
-    """Extract text from Word .docx using python-docx."""
+    """Extract text from Word .docx using MarkItDown (preferred) or python-docx."""
+    md_text = extract_markitdown(path)
+    if md_text:
+        lines = md_text.split("\n")
+        return md_text, len([l for l in lines if l.strip()]), None
     try:
         from docx import Document
         doc = Document(path)
@@ -71,7 +98,11 @@ def extract_docx(path):
 
 
 def extract_pptx(path):
-    """Extract text from PowerPoint .pptx using python-pptx."""
+    """Extract text from PowerPoint .pptx using MarkItDown (preferred) or python-pptx."""
+    md_text = extract_markitdown(path)
+    if md_text:
+        lines = md_text.split("\n")
+        return md_text, len([l for l in lines if l.strip()]), None
     try:
         from pptx import Presentation
         prs = Presentation(path)
@@ -100,7 +131,11 @@ def extract_pptx(path):
 
 
 def extract_xlsx(path):
-    """Extract text from Excel .xlsx using openpyxl."""
+    """Extract text from Excel .xlsx using MarkItDown (preferred) or openpyxl."""
+    md_text = extract_markitdown(path)
+    if md_text:
+        lines = md_text.split("\n")
+        return md_text, len([l for l in lines if l.strip()]), None
     try:
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True, data_only=True)
