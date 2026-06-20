@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { readWikiFileBase64 } from "../../services/wiki";
 import { showInFolder } from "../../services/api";
+import { PdfViewer } from "./PdfViewer";
 import styles from "./FilePreview.module.css";
 
 interface Props {
@@ -12,16 +13,6 @@ function computeFileKind(fileName: string): string {
   return /^(png|jpg|jpeg|gif|svg|webp|bmp|ico|tiff)$/.test(ext) ? "image" :
     ext === "pdf" ? "pdf" :
     /^(docx|xlsx|pptx)$/.test(ext) ? "convertible" : "static";
-}
-
-function base64ToBlobUrl(base64: string, mime: string): string {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  const blob = new Blob([bytes], { type: mime });
-  return URL.createObjectURL(blob);
 }
 
 export function FilePreview({ filePath }: Props) {
@@ -146,14 +137,13 @@ export function FilePreview({ filePath }: Props) {
   }
 
   if (fileKind === "pdf" && base64) {
-    const blobUrl = base64ToBlobUrl(base64, mime);
+    // Decode base64 to binary for PDF.js canvas rendering
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return (
       <div className={styles.wrapper}>
-        <iframe
-          className={styles.pdfFrame}
-          src={blobUrl}
-          title={fileName}
-        />
+        <PdfViewer data={bytes} />
       </div>
     );
   }
