@@ -7,6 +7,7 @@
   background: #1e1e1e;
   position: relative;
   overflow: hidden;
+  height: 100%;
 }
 
 /* ── PDF iframe ── */
