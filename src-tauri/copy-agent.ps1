@@ -1,3 +1,20 @@
+# Install document extraction libraries into the embedded Python.
+# The portable Python has no pip/ensurepip, so we use a system Python
+# with --target to inject the packages directly into site-packages.
+$pythonSrc = "$PSScriptRoot\hermes-agent\python\python.exe"
+$sitePkgs = "$PSScriptRoot\hermes-agent\python\Lib\site-packages"
+# Try system Python (dev machine has it), fallback to embedded
+$sysPython = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $sysPython) { $sysPython = $pythonSrc }
+$libs = @("pdfplumber", "python-docx", "python-pptx", "openpyxl")
+foreach ($lib in $libs) {
+    try {
+        & $sysPython -m pip install --target "$sitePkgs" --quiet "$lib" 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { Write-Output "  pip install $lib OK" }
+        else { Write-Warning "  pip install $lib FAILED" }
+    } catch { Write-Warning "  pip install $lib ERROR: $_" }
+}
+
 # Regenerate hermes-agent.zip so Tauri bundles the latest plugin code.
 # The ZIP is listed as a Tauri resource and extracted at runtime.
 $src = "$PSScriptRoot\hermes-agent"
