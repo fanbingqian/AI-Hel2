@@ -102,7 +102,7 @@ impl ConfigService {
     pub fn read_nexus_config(&self) -> Result<serde_json::Value, String> {
         let config_path = self.hermes_home.join("config.yaml");
         if !config_path.exists() {
-            return Ok(serde_json::json!({"llm_mode": "custom"}));
+            return Ok(serde_json::json!({"llm_mode": "follow_agent"}));
         }
         let content = std::fs::read_to_string(&config_path)
             .map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
@@ -111,7 +111,7 @@ impl ConfigService {
             .map_err(|e| format!("解析 config.yaml 失败: {e}"))?;
         let nexus = value.get("nexus")
             .map(|n| serde_json::to_value(n).unwrap_or_default())
-            .unwrap_or_else(|| serde_json::json!({"llm_mode": "custom"}));
+            .unwrap_or_else(|| serde_json::json!({"llm_mode": "follow_agent"}));
         Ok(nexus)
     }
 
