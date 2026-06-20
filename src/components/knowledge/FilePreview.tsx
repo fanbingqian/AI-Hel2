@@ -30,6 +30,7 @@ export function FilePreview({ filePath }: Props) {
   const [base64, setBase64] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
+  const [zoom, setZoom] = useState(1);
   const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -132,13 +133,15 @@ export function FilePreview({ filePath }: Props) {
             className={styles.image}
             src={`data:${mime};base64,${base64}`}
             alt={fileName}
-            style={{ transform: `rotate(${rotation}deg)` }}
+            style={{ transform: `rotate(${rotation}deg) scale(${zoom})` }}
           />
         </div>
         <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 8, zIndex: 10 }}>
-          <button type="button" onClick={() => setRotation(r => r - 90)} style={{ padding: "4px 10px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>↺ 左转</button>
-          <button type="button" onClick={() => setRotation(0)} style={{ padding: "4px 10px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>还原</button>
-          <button type="button" onClick={() => setRotation(r => r + 90)} style={{ padding: "4px 10px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>右转 ↻</button>
+          <button type="button" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>🔍−</button>
+          <button type="button" onClick={() => setZoom(z => Math.min(5, z + 0.25))} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>🔍+</button>
+          <button type="button" onClick={() => setRotation(r => r - 90)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>↺</button>
+          <button type="button" onClick={() => { setRotation(0); setZoom(1); }} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>重置</button>
+          <button type="button" onClick={() => setRotation(r => r + 90)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>↻</button>
         </div>
       </div>
     );
