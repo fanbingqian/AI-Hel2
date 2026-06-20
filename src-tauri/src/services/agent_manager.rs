@@ -253,6 +253,25 @@ impl AgentManager {
         let _ = fs::write(target_dir.join(".extract_done"), "ok");
 
         log::info!("[AgentManager] Extracted {} files to {}", archive.len(), target_dir.display());
+
+        // Install document extraction libraries into the embedded Python
+        let python_exe = target_dir.join("python").join("python.exe");
+        let pip_marker = target_dir.join(".pip_deps_installed");
+        if python_exe.exists() && !pip_marker.exists() {
+            log::info!("[AgentManager] Installing document extraction libraries...");
+            for lib in &["pdfplumber", "python-docx", "python-pptx", "openpyxl"] {
+                let output = std::process::Command::new(&python_exe)
+                    .args(["-m", "pip", "install", "--quiet", lib])
+                    .output();
+                match output {
+                    Ok(o) if o.status.success() => log::info!("[AgentManager]   pip install {} ok", lib),
+                    Ok(o) => log::warn!("[AgentManager]   pip install {} failed: {}", lib,
+                        String::from_utf8_lossy(&o.stderr).lines().last().unwrap_or("")),
+                    Err(e) => log::warn!("[AgentManager]   pip install {} error: {e}", lib),
+                }
+            }
+            let _ = fs::write(&pip_marker, "ok");
+        }
         Some(self.hermes_home.clone())
     }
 
