@@ -136,9 +136,11 @@ impl AgentManager {
         }
         log::info!("[AgentManager] Bootstrapping pip...");
         // Portable Python may not have pip — bootstrap it first
-        let ensurepip = std::process::Command::new(&python_exe)
-            .args(["-m", "ensurepip", "--upgrade", "--default-pip"])
-            .output();
+        let mut ecmd = std::process::Command::new(&python_exe);
+        ecmd.args(["-m", "ensurepip", "--upgrade", "--default-pip"]);
+        #[cfg(windows)]
+        ecmd.creation_flags(CREATE_NO_WINDOW);
+        let ensurepip = ecmd.output();
         match ensurepip {
             Ok(o) if o.status.success() => log::info!("[AgentManager]   pip bootstrapped"),
             Ok(o) => log::warn!("[AgentManager]   ensurepip: {}", String::from_utf8_lossy(&o.stderr)),
@@ -147,9 +149,11 @@ impl AgentManager {
         log::info!("[AgentManager] Installing document extraction libraries...");
         let libs = &["pdfplumber", "python-docx", "python-pptx", "openpyxl"];
         for lib in libs {
-            let output = std::process::Command::new(&python_exe)
-                .args(["-m", "pip", "install", "--quiet", lib])
-                .output();
+            let mut cmd = std::process::Command::new(&python_exe);
+            cmd.args(["-m", "pip", "install", "--quiet", lib]);
+            #[cfg(windows)]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            let output = cmd.output();
             match output {
                 Ok(o) if o.status.success() => log::info!("[AgentManager]   pip install {} ok", lib),
                 Ok(o) => log::warn!("[AgentManager]   pip install {} failed: {}", lib,
