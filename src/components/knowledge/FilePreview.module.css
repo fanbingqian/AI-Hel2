@@ -5,6 +5,8 @@
   display: flex;
   flex-direction: column;
   background: #1e1e1e;
+  position: relative;
+  overflow: hidden;
 }
 
 /* ── PDF iframe ── */
