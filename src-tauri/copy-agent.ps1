@@ -6,7 +6,7 @@ $sitePkgs = "$PSScriptRoot\hermes-agent\python\Lib\site-packages"
 # Try system Python (dev machine has it), fallback to embedded
 $sysPython = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $sysPython) { $sysPython = $pythonSrc }
-$libs = @("pdfplumber", "python-docx", "python-pptx", "openpyxl")
+$libs = @("pdfplumber", "python-docx", "python-pptx", "openpyxl", "pytesseract", "Pillow")
 foreach ($lib in $libs) {
     try {
         & $sysPython -m pip install --target "$sitePkgs" --quiet "$lib" 2>&1 | Out-Null

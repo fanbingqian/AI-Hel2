@@ -157,6 +157,32 @@ def extract_xlsx(path):
         return "", 0, f"XLSX extract error: {e}"
 
 
+def extract_image(path):
+    """Extract text from image: OCR first, then base64 fallback for LLM."""
+    # Try OCR first
+    try:
+        from PIL import Image
+        img = Image.open(path)
+        try:
+            import pytesseract
+            text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+            if text and text.strip():
+                return text.strip(), 1, None
+        except ImportError:
+            pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Fallback: base64 for LLM multimodal description
+    b64, err = describe_image_base64(path)
+    if err:
+        return "", 0, err
+    # Return base64 as "text" — caller's LLM handles multimodal
+    return b64, 1, None
+
+
 def describe_image_base64(path):
     """Read image file and return base64 data URL for multimodal LLM."""
     try:
@@ -208,6 +234,9 @@ def main():
         "docx": extract_docx,
         "pptx": extract_pptx,
         "xlsx": extract_xlsx,
+        "png": extract_image, "jpg": extract_image, "jpeg": extract_image,
+        "gif": extract_image, "webp": extract_image, "bmp": extract_image,
+        "svg": extract_image, "ico": extract_image, "tiff": extract_image,
     }
 
     if file_type in extractors:
