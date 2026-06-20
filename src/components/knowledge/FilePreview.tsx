@@ -149,10 +149,9 @@ export function FilePreview({ filePath }: Props) {
     const blobUrl = base64ToBlobUrl(base64, mime);
     return (
       <div className={styles.wrapper}>
-        <embed
+        <iframe
           className={styles.pdfFrame}
           src={blobUrl}
-          type="application/pdf"
           title={fileName}
         />
       </div>

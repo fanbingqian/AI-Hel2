@@ -901,9 +901,19 @@ impl AgentManager {
         let pid = child.id();
         log::info!("Shutting down Agent (pid={pid})...");
 
-        // Try graceful kill first
-        if let Err(e) = child.kill() {
-            log::warn!("Failed to kill agent process: {e}");
+        // Use tree-kill on Windows to catch all subprocesses spawned by the gateway
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .creation_flags(0x08000000)
+                .output();
+        }
+        #[cfg(not(windows))]
+        {
+            if let Err(e) = child.kill() {
+                log::warn!("Failed to kill agent process: {e}");
+            }
         }
 
         // Wait for exit with grace period
