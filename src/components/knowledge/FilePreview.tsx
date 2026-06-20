@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { readWikiFileBase64 } from "../../services/wiki";
 import { showInFolder } from "../../services/api";
 import styles from "./FilePreview.module.css";
@@ -31,7 +31,41 @@ export function FilePreview({ filePath }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  const lastPos = useRef({ x: 0, y: 0 });
   const blobUrlRef = useRef<string | null>(null);
+
+  const resetView = useCallback(() => { setRotation(0); setZoom(1); setPan({ x: 0, y: 0 }); }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.15 : -0.15;
+    setZoom(z => Math.min(10, Math.max(0.1, z + delta)));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom <= 1) return;
+    dragging.current = true;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setAttribute("style", "cursor:grabbing");
+  }, [zoom]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging.current) return;
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+    setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    dragging.current = false;
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    if (zoom > 1) { resetView(); } else { setZoom(2); setPan({ x: 0, y: 0 }); }
+  }, [zoom, resetView]);
 
   useEffect(() => {
     return () => {
@@ -112,13 +146,13 @@ export function FilePreview({ filePath }: Props) {
   }
 
   if (fileKind === "pdf" && base64) {
-    // Use Blob URL instead of data: URL — Chromium blocks data: URLs for PDF in iframes
     const blobUrl = base64ToBlobUrl(base64, mime);
     return (
       <div className={styles.wrapper}>
-        <iframe
+        <embed
           className={styles.pdfFrame}
           src={blobUrl}
+          type="application/pdf"
           title={fileName}
         />
       </div>
@@ -128,20 +162,28 @@ export function FilePreview({ filePath }: Props) {
   if (fileKind === "image" && base64) {
     return (
       <div className={styles.wrapper}>
-        <div className={styles.imageContainer}>
+        <div
+          className={styles.imageContainer}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onDoubleClick={handleDoubleClick}
+          style={{ cursor: zoom > 1 ? "grab" : "default" }}
+        >
           <img
             className={styles.image}
             src={`data:${mime};base64,${base64}`}
             alt={fileName}
-            style={{ transform: `rotate(${rotation}deg) scale(${zoom})` }}
+            draggable={false}
+            style={{ transform: `rotate(${rotation}deg) scale(${zoom}) translate(${pan.x}px,${pan.y}px)` }}
           />
         </div>
-        <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 8, zIndex: 10 }}>
-          <button type="button" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>🔍−</button>
-          <button type="button" onClick={() => setZoom(z => Math.min(5, z + 0.25))} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>🔍+</button>
-          <button type="button" onClick={() => setRotation(r => r - 90)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>↺</button>
-          <button type="button" onClick={() => { setRotation(0); setZoom(1); }} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>重置</button>
-          <button type="button" onClick={() => setRotation(r => r + 90)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>↻</button>
+        <div className={styles.toolbar}>
+          <button className={styles.toolBtn} onClick={() => setRotation(r => r - 90)} title="左转">↺</button>
+          <button className={styles.toolBtn} onClick={resetView} title="重置">⟲</button>
+          <button className={styles.toolBtn} onClick={() => setRotation(r => r + 90)} title="右转">↻</button>
         </div>
       </div>
     );

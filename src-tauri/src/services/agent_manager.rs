@@ -134,6 +134,16 @@ impl AgentManager {
         if !python_exe.exists() || pip_marker.exists() {
             return;
         }
+        log::info!("[AgentManager] Bootstrapping pip...");
+        // Portable Python may not have pip — bootstrap it first
+        let ensurepip = std::process::Command::new(&python_exe)
+            .args(["-m", "ensurepip", "--upgrade", "--default-pip"])
+            .output();
+        match ensurepip {
+            Ok(o) if o.status.success() => log::info!("[AgentManager]   pip bootstrapped"),
+            Ok(o) => log::warn!("[AgentManager]   ensurepip: {}", String::from_utf8_lossy(&o.stderr)),
+            Err(e) => log::warn!("[AgentManager]   ensurepip error: {e}"),
+        }
         log::info!("[AgentManager] Installing document extraction libraries...");
         let libs = &["pdfplumber", "python-docx", "python-pptx", "openpyxl"];
         for lib in libs {
