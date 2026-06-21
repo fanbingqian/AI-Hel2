@@ -5,6 +5,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 
 /* ── Cherry host: flex fill ── */

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAuthStore } from "../../stores/authStore";
 import { AgentSettings } from "./AgentSettings";
+import { UpdateDialog } from "./UpdateDialog";
 import { PasswordInput } from "../shared/PasswordInput";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -751,73 +752,15 @@ function VoiceSection() {
 }
 
 function UpdateSection() {
-  const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState("");
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<any>(null);
-  const [installing, setInstalling] = useState(false);
-
-  const handleCheck = async () => {
-    setChecking(true);
-    setResult("");
-    try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-      if (update) {
-        setUpdateAvailable(true);
-        setUpdateInfo(update);
-        const sizeMB = (((update as any).contentLength || 0) / 1024 / 1024).toFixed(1);
-        setResult(`发现新版本 ${update.version}，大小 ${sizeMB} MB`);
-      } else {
-        setUpdateAvailable(false);
-        setResult("当前已是最新版本");
-      }
-    } catch (err: any) {
-      setResult(`检查更新失败: ${err?.message || err}`);
-    }
-    setChecking(false);
-  };
-
-  const handleInstall = async () => {
-    if (!updateInfo) return;
-    setInstalling(true);
-    setResult("正在下载更新...");
-    try {
-      let downloaded = 0;
-      await updateInfo.download((e: any) => {
-        if (e.event === "Progress") {
-          const pct = (updateInfo as any).contentLength ? ((e.data.contentLength / (updateInfo as any).contentLength) * 100).toFixed(0) : "?";
-          setResult(`下载中... ${pct}%`);
-        }
-      });
-      setResult("正在安装更新，应用将自动重启...");
-      await updateInfo.install();
-    } catch (err: any) {
-      setResult(`安装失败: ${err?.message || err}`);
-    }
-    setInstalling(false);
-  };
+  const [showUpdate, setShowUpdate] = useState(false);
 
   return (
     <div className={styles.section}>
       <h2 className={styles.sectionTitle}>更新</h2>
       <div className={styles.fieldGroup}>
-        <div className={styles.desc} style={{ marginBottom: 8 }}>
-          当前版本: 0.1.0
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className={styles.btnPrimary} onClick={handleCheck} disabled={checking}>
-            {checking ? "检查中..." : "检查更新"}
-          </button>
-          {updateAvailable && (
-            <button className={styles.btnPrimary} onClick={handleInstall} disabled={installing}
-              style={{ background: "#07c160", borderColor: "#07c160" }}>
-              {installing ? "安装中..." : "立即更新"}
-            </button>
-          )}
-        </div>
-        {result && <div className={styles.desc} style={{ marginTop: 8, color: updateAvailable ? "#f59e0b" : "#07c160" }}>{result}</div>}
+        <button className={styles.btnPrimary} onClick={() => setShowUpdate(true)}>检查更新</button>
       </div>
+      {showUpdate && <UpdateDialog onClose={() => setShowUpdate(false)} />}
     </div>
   );
 }
