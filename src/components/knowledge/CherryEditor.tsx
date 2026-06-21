@@ -81,6 +81,8 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         setDirty(false);
         if (cherryRef.current) {
           cherryRef.current.setMarkdown(data);
+          // Force CodeMirror to recalculate height after content load
+          setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
         }
       })
       .catch((e) => {
