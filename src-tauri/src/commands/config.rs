@@ -503,7 +503,16 @@ pub async fn download_update(app: tauri::AppHandle, url: String) -> Result<Strin
     }
     let tmp = std::env::temp_dir().join(format!("AI-Hel2_update_{}.exe", std::process::id()));
     std::fs::write(&tmp, &buf).map_err(|e| format!("写入临时文件失败: {e}"))?;
-    std::process::Command::new(&tmp).spawn().map_err(|e| format!("启动安装程序失败: {e}"))?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("powershell")
+            .args(["-Command", "Start-Process", "-FilePath", tmp.to_str().unwrap_or(""), "-Verb", "RunAs", "-Wait"])
+            .spawn().map_err(|e| format!("启动安装程序失败: {e}"))?;
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(&tmp).spawn().map_err(|e| format!("启动安装程序失败: {e}"))?;
+    }
     let _ = app.emit("update:done", serde_json::json!({"installing": true}));
     Ok(tmp.to_string_lossy().to_string())
 }
