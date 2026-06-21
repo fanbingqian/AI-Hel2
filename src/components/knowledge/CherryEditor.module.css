@@ -217,3 +217,8 @@
 .root :global(.cherry .cm-editor .cm-scroller) {
   overflow-y: auto !important;
 }
+
+/* Cherry container — needs explicit height for child absolute positioning */
+.root :global(.cherry) {
+  height: 100% !important;
+}
