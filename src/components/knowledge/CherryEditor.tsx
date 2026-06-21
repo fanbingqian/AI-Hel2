@@ -81,8 +81,12 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         setDirty(false);
         if (cherryRef.current) {
           cherryRef.current.setMarkdown(data);
-          // Force CodeMirror to recalculate height after content load
-          setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+          // CodeMirror 5 caches its height at init time — force refresh
+          const cm = (cherryRef.current as any).editor;
+          if (cm?.refresh) {
+            setTimeout(() => cm.refresh(), 100);
+            setTimeout(() => cm.refresh(), 500);
+          }
         }
       })
       .catch((e) => {
@@ -278,6 +282,9 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     (newMode: EditorMode) => {
       setMode(newMode);
       cherryRef.current?.switchModel(newMode);
+      // CodeMirror needs explicit refresh after mode switch
+      const cm = (cherryRef.current as any)?.editor;
+      setTimeout(() => cm?.refresh?.(), 100);
     },
     []
   );
