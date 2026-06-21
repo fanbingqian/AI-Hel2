@@ -212,3 +212,8 @@
   display: flex; align-items: center; justify-content: center;
   color: #808080; font-size: 13px; background: #1e1e1e;
 }
+
+/* CodeMirror scroller — enable scroll (Cherry omits this) */
+.root :global(.cherry .cm-editor .cm-scroller) {
+  overflow-y: auto !important;
+}
