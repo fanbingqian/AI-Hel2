@@ -1,8 +1,0 @@
-name: tokenjuice
-version: "1.0.0"
-description: "Compress tool outputs before they enter the LLM context window. Targets 30-60% token reduction on tool-heavy conversations."
-author: "AI-Hel"
-kind: backend
-provides_hooks:
-  - transform_tool_result
-  - transform_terminal_output
