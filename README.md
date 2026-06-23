@@ -84,4 +84,6 @@ npm run tauri build  # 构建安装包
 
 ## License
 
-MIT
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full text.
+
+Copyright 2025-2026 AI-Hel2
