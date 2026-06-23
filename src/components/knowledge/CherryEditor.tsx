@@ -51,6 +51,7 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cherryRef = useRef<Cherry | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const mutationObserverRef = useRef<MutationObserver | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,9 +64,11 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
   const refreshCodeMirror = useCallback(() => {
     const cm = (cherryRef.current as any)?.editor;
     if (cm?.refresh) {
-      // requestAnimationFrame ensures the DOM has painted before we measure
+      // Double rAF: wait for browser layout + paint before measuring
       requestAnimationFrame(() => {
-        cm.refresh();
+        requestAnimationFrame(() => {
+          cm.refresh();
+        });
       });
     }
   }, []);
@@ -91,7 +94,9 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         setDirty(false);
         if (cherryRef.current) {
           cherryRef.current.setMarkdown(data);
-          refreshCodeMirror();
+          // Cherry renders asynchronously — refresh after DOM settles
+          setTimeout(() => refreshCodeMirror(), 50);
+          setTimeout(() => refreshCodeMirror(), 200);
         }
       })
       .catch((e) => {
@@ -182,7 +187,7 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     };
   }, []);
 
-  // ── ResizeObserver: refresh CodeMirror when container size changes ──
+  // ── ResizeObserver + MutationObserver: refresh CodeMirror on any layout change ──
   useEffect(() => {
     const hostEl = containerRef.current;
     if (!hostEl) return;
@@ -192,9 +197,23 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     });
     resizeObserverRef.current.observe(hostEl);
 
+    // MutationObserver catches Cherry's internal DOM changes
+    // (content load, mode switch, etc.) that ResizeObserver misses
+    mutationObserverRef.current = new MutationObserver(() => {
+      refreshCodeMirror();
+    });
+    mutationObserverRef.current.observe(hostEl, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
+      mutationObserverRef.current?.disconnect();
+      mutationObserverRef.current = null;
     };
   }, [refreshCodeMirror]);
 
@@ -293,7 +312,8 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     (newMode: EditorMode) => {
       setMode(newMode);
       cherryRef.current?.switchModel(newMode);
-      refreshCodeMirror();
+      // Cherry needs time to rebuild its internal DOM
+      setTimeout(() => refreshCodeMirror(), 100);
     },
     [refreshCodeMirror]
   );

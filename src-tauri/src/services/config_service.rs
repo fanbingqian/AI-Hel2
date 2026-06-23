@@ -89,7 +89,10 @@ impl ConfigService {
         let content = strip_bom(&content);
 
         serde_yaml::from_str(&content)
-            .map_err(|e| format!("解析 config.yaml 失败: {e}"))
+            .or_else(|e| {
+                log::warn!("config.yaml 解析失败，回退到默认配置: {e}");
+                Ok(HermesConfig::default())
+            })
     }
 
     pub fn write_config(&self, updates: &serde_json::Value) -> Result<(), String> {
