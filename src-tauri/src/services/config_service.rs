@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HermesConfig {
+    #[serde(default)]
     pub model: ModelConfig,
+    #[serde(default)]
     pub gateway: GatewayConfig,
     #[serde(default)]
     pub active_profile: Option<String>,
@@ -34,10 +36,27 @@ pub struct ModelConfig {
     pub api_key: Option<String>,
 }
 
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            provider: default_provider(),
+            name: default_model(),
+            default: default_gateway_model(),
+            api_key: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayConfig {
     #[serde(default = "default_port")]
     pub port: u16,
+}
+
+impl Default for GatewayConfig {
+    fn default() -> Self {
+        Self { port: default_port() }
+    }
 }
 
 fn default_provider() -> String { "anthropic".into() }
@@ -74,7 +93,11 @@ impl ConfigService {
     }
 
     pub fn write_config(&self, updates: &serde_json::Value) -> Result<(), String> {
-        let config = self.read_config()?;
+        // Try to read existing config, fall back to default if missing required fields
+        let config = self.read_config().unwrap_or_else(|e| {
+            log::warn!("config.yaml 解析失败，回退到默认配置: {e}");
+            HermesConfig::default()
+        });
         let config_value = serde_json::to_value(&config)
             .map_err(|e| format!("序列化配置失败: {e}"))?;
 
