@@ -23,8 +23,6 @@ function getSystemTheme(): Theme {
 }
 
 // ── Wikilink custom syntax hook ──
-// Matches Obsidian-style [[target]] and [[target|alias]] wikilinks.
-// Obsidian wikilink reference: https://help.obsidian.md/links
 const WIKILINK_REGEX = /\[\[([^\]]+)\]\]/g;
 const WikilinkHook = Cherry.createSyntaxHook("wikilink", "sentence", {
   test(str: string) {
@@ -52,6 +50,7 @@ const WikilinkHook = Cherry.createSyntaxHook("wikilink", "sentence", {
 export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cherryRef = useRef<Cherry | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -59,6 +58,17 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
   const [theme, setThemeState] = useState<Theme>(getSystemTheme);
   const contentRef = useRef("");
   const instanceId = useId().replace(/:/g, "");
+
+  // ── Helper: force CodeMirror to recalculate its layout ──
+  const refreshCodeMirror = useCallback(() => {
+    const cm = (cherryRef.current as any)?.editor;
+    if (cm?.refresh) {
+      // requestAnimationFrame ensures the DOM has painted before we measure
+      requestAnimationFrame(() => {
+        cm.refresh();
+      });
+    }
+  }, []);
 
   // Load file content when filePath changes
   useEffect(() => {
@@ -81,12 +91,7 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         setDirty(false);
         if (cherryRef.current) {
           cherryRef.current.setMarkdown(data);
-          // CodeMirror 5 caches its height at init time — force refresh
-          const cm = (cherryRef.current as any).editor;
-          if (cm?.refresh) {
-            setTimeout(() => cm.refresh(), 100);
-            setTimeout(() => cm.refresh(), 500);
-          }
+          refreshCodeMirror();
         }
       })
       .catch((e) => {
@@ -94,7 +99,7 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         contentRef.current = "";
         setLoading(false);
       });
-  }, [filePath]);
+  }, [filePath, refreshCodeMirror]);
 
   // Create Cherry instance once
   useEffect(() => {
@@ -140,9 +145,10 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         ],
       },
       callback: {
-        afterChange: (text: string) => {
-          contentRef.current = text;
+        afterChange: (_text: string) => {
+          contentRef.current = _text;
           setDirty(true);
+          refreshCodeMirror();
         },
         onClickPreview: (e: MouseEvent) => {
           const target = e.target as HTMLElement;
@@ -151,7 +157,6 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
             e.preventDefault();
             const linkTarget = link.dataset.target;
             if (linkTarget) {
-              // Resolve wikilink relative to current file's directory
               let resolved: string;
               if (filePath) {
                 const dir = filePath.replace(/[/][^/]+$/, "");
@@ -159,7 +164,6 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
               } else {
                 resolved = linkTarget;
               }
-              // Add .md extension if no extension present
               if (!/\.[a-zA-Z0-9]+$/.test(resolved)) {
                 resolved = `${resolved}.md`;
               }
@@ -178,15 +182,29 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     };
   }, []);
 
+  // ── ResizeObserver: refresh CodeMirror when container size changes ──
+  useEffect(() => {
+    const hostEl = containerRef.current;
+    if (!hostEl) return;
+
+    resizeObserverRef.current = new ResizeObserver(() => {
+      refreshCodeMirror();
+    });
+    resizeObserverRef.current.observe(hostEl);
+
+    return () => {
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
+    };
+  }, [refreshCodeMirror]);
+
   // ── Resolve relative image paths to base64 for webview display ──
   const resolveWikiImage = useCallback(
     (img: HTMLImageElement) => {
       const src = img.getAttribute("src") || "";
-      // Only process relative paths — skip absolute URLs and data URIs
       if (!src || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) {
         return;
       }
-      // Resolve relative to current file's directory
       let resolvedPath: string;
       if (filePath) {
         const dir = filePath.replace(/[/][^/]+$/, "");
@@ -194,7 +212,6 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
       } else {
         resolvedPath = src.startsWith("/") ? src.slice(1) : src;
       }
-      // Deduplicate: only resolve each path once per session
       const key = `cherry-img-${resolvedPath}`;
       const cached = (img as any).__cherryImageKey;
       if (cached === key) return;
@@ -211,9 +228,7 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
           const mime = mimeMap[ext] || "image/png";
           img.src = `data:${mime};base64,${b64}`;
         })
-        .catch(() => {
-          // Leave src as-is if the image can't be loaded
-        });
+        .catch(() => {});
     },
     [filePath],
   );
@@ -227,7 +242,6 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
       root.querySelectorAll("img").forEach((img) => resolveWikiImage(img as HTMLImageElement));
     };
 
-    // Initial scan (Cherry may render after this effect runs)
     const initialTimer = setTimeout(() => scanImages(container), 200);
 
     const observer = new MutationObserver((mutations) => {
@@ -265,13 +279,10 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
   const handleSave = useCallback(async () => {
     if (!filePath || !dirty) return;
     try {
-      // Prefer contentRef (raw text from afterChange, includes YAML frontmatter).
-      // Cherry's getMarkdown() may strip frontmatter block.
       const currentContent = contentRef.current || cherryRef.current?.getMarkdown() || "";
       await api.writeWikiFile(filePath, currentContent);
       setDirty(false);
       onSaved?.();
-      // Fire tree refresh immediately (FileWatcher also fires after debounce)
       emit("wiki:files-changed", { path: filePath, change_type: "Modified" });
     } catch (e) {
       setError(`保存失败: ${e}`);
@@ -282,11 +293,9 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     (newMode: EditorMode) => {
       setMode(newMode);
       cherryRef.current?.switchModel(newMode);
-      // CodeMirror needs explicit refresh after mode switch
-      const cm = (cherryRef.current as any)?.editor;
-      setTimeout(() => cm?.refresh?.(), 100);
+      refreshCodeMirror();
     },
-    []
+    [refreshCodeMirror]
   );
 
   useEffect(() => {
