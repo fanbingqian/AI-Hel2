@@ -346,36 +346,26 @@ pub fn run() {
                         }),
                     );
 
-                    // Handle file removal: clean up stale entities
+                    // Handle file removal: cascade-delete knowledge graph entities
                     if matches!(event.change_type, ChangeType::Removed) {
-                        let ext = std::path::Path::new(&event.file_path)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        if ext == "md" {
-                            let ks = ks_handle.state::<KnowledgeState>();
-                            let svc = ks.service.lock().await;
-                            let mut files = std::collections::HashSet::new();
-                            svc.collect_md_files(&svc.wiki_dir(), &mut files);
-                            match svc.cleanup_stale_wiki_entities(&files) {
-                                Ok((entities, relations)) => {
-                                    if entities > 0 {
-                                        log::info!(
-                                            "File removed {}: cleaned {} entities, {} relations",
-                                            event.file_path, entities, relations
-                                        );
-                                        let _ = ks_handle.emit(
-                                            "knowledge:graph-updated",
-                                            &serde_json::json!({
-                                                "stale_entities_removed": entities,
-                                                "stale_relations_removed": relations,
-                                            }),
-                                        );
-                                    }
-                                }
-                                Err(e) => log::warn!("Cleanup after removal failed: {e}"),
+                        let ks = ks_handle.state::<KnowledgeState>();
+                        let svc = ks.service.lock().await;
+                        match svc.cascade_delete_document(&event.file_path) {
+                            Ok(deleted) if deleted > 0 => {
+                                log::info!(
+                                    "File removed {}: cascade-deleted {} entities from graph",
+                                    event.file_path, deleted
+                                );
+                                let _ = ks_handle.emit(
+                                    "knowledge:graph-updated",
+                                    &serde_json::json!({
+                                        "stale_entities_removed": deleted,
+                                        "stale_relations_removed": 0,
+                                    }),
+                                );
                             }
+                            Err(e) => log::warn!("Cascade delete after file removal failed: {e}"),
+                            _ => {}
                         }
                         continue;
                     }
