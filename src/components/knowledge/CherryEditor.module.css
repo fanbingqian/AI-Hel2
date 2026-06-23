@@ -213,6 +213,11 @@
   color: #808080; font-size: 13px; background: #1e1e1e;
 }
 
+/* Cherry editor pane — Cherry sets overflow:hidden here, override to enable scroll */
+.root :global(.cherry .cherry-editor) {
+  overflow-y: auto !important;
+}
+
 /* CodeMirror scroller — enable scroll (Cherry omits this) */
 .root :global(.cherry .cm-editor .cm-scroller) {
   overflow-y: auto !important;
