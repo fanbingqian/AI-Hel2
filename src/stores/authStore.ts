@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { UserInfo } from "../types";
-import { getConfig, getCurrentUser } from "../services/api";
+import { getConfig, getCurrentUser, validateSession, logoutUser } from "../services/api";
 
 export type AuthStage = "splash" | "login" | "register" | "api_setup" | "done";
 
@@ -16,8 +16,8 @@ interface AuthState {
   checkFirstRun: () => Promise<void>;
   proceedAfterLogin: () => Promise<void>;
   proceedAfterRegister: () => void;
-  logout: () => void;
-  resetAuth: () => void;
+  logout: () => Promise<void>;
+  resetAuth: () => Promise<void>;
   proceedAfterSplash: () => void;
 }
 
@@ -48,6 +48,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkFirstRun: async () => {
     set({ loading: true, error: null });
     try {
+      // Try auto-login with cached session token (30-day expiry)
+      const sessionUser = await validateSession() as any;
+      if (sessionUser?.name) {
+        set({ isFirstRun: false, user: sessionUser, loading: false });
+        get().proceedAfterLogin();
+        return;
+      }
+
+      // No valid session — check if user exists at all
       const user = await getCurrentUser() as any;
       if (user?.name) {
         set({ isFirstRun: false, stage: "login", loading: false });
@@ -72,11 +81,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ stage: "api_setup" });
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      await logoutUser();
+    } catch {
+      // ignore — token cleanup is best-effort
+    }
     set({ user: null, stage: "login", isFirstRun: false });
   },
 
-  resetAuth: () => {
+  resetAuth: async () => {
+    try {
+      await logoutUser();
+    } catch {
+      // ignore
+    }
     set({ user: null, stage: "login", isFirstRun: false, error: null });
   },
 

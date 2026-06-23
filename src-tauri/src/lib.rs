@@ -549,6 +549,8 @@ pub fn run() {
             commands::auth::login_user,
             commands::auth::get_current_user,
             commands::auth::change_password,
+            commands::auth::validate_session,
+            commands::auth::logout_user,
             // Voice
             commands::voice::check_voice_deps,
             commands::voice::voice_diagnose,

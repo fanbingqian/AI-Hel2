@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -222,7 +222,7 @@ impl ConfigService {
         self.atomic_write(&env_path, &content)
     }
 
-    fn atomic_write(&self, path: &Path, content: &str) -> Result<(), String> {
+    pub fn atomic_write(&self, path: &Path, content: &str) -> Result<(), String> {
         let tmp_path = path.with_extension("tmp");
         std::fs::write(&tmp_path, content)
             .map_err(|e| format!("写入临时文件失败: {e}"))?;

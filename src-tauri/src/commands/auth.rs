@@ -231,11 +231,103 @@ pub async fn login_user(
     // Reset rate limit on successful login
     reset_rate_limit(&username);
 
+    // Generate session token (30-day expiry)
+    let token = uuid::Uuid::new_v4().to_string();
+    let expires = chrono::Utc::now() + chrono::Duration::days(30);
+    let expires_str = expires.to_rfc3339();
+
+    let user_json = serde_json::json!({
+        "user": {
+            "name": &username,
+            "email": &stored.email,
+            "token": &token,
+            "token_expires_at": &expires_str,
+        }
+    });
+    config.write_config(&user_json)?;
+
     Ok(UserInfo {
         avatar_letter: avatar_letter(&username),
         name: username,
         email: stored.email.clone(),
     })
+}
+
+#[tauri::command]
+pub async fn validate_session(
+    state: tauri::State<'_, AuthState>,
+) -> Result<Option<UserInfo>, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+
+    let config_path = config.hermes_home().join("config.yaml");
+    if !config_path.exists() {
+        return Ok(None);
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+
+    let parsed: serde_json::Value =
+        serde_yaml::from_str(&content).map_err(|e| format!("解析 config.yaml 失败: {e}"))?;
+
+    if let Some(user) = parsed.get("user") {
+        let name = user.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let token = user.get("token").and_then(|v| v.as_str()).unwrap_or("");
+        let expires_str = user.get("token_expires_at").and_then(|v| v.as_str()).unwrap_or("");
+
+        if name.is_empty() || token.is_empty() || expires_str.is_empty() {
+            return Ok(None);
+        }
+
+        // Check expiry
+        if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(expires_str) {
+            if chrono::Utc::now() > expires.with_timezone(&chrono::Utc) {
+                log::info!("Session token expired for user {name}");
+                return Ok(None);
+            }
+        } else {
+            return Ok(None);
+        }
+
+        let email = user.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        return Ok(Some(UserInfo {
+            avatar_letter: avatar_letter(name),
+            name: name.to_string(),
+            email,
+        }));
+    }
+
+    Ok(None)
+}
+
+#[tauri::command]
+pub async fn logout_user(
+    state: tauri::State<'_, AuthState>,
+) -> Result<(), String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+
+    let config_path = config.hermes_home().join("config.yaml");
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+
+    let mut parsed: serde_json::Value =
+        serde_yaml::from_str(&content).map_err(|e| format!("解析 config.yaml 失败: {e}"))?;
+
+    if let Some(user) = parsed.get_mut("user") {
+        if let Some(obj) = user.as_object_mut() {
+            obj.remove("token");
+            obj.remove("token_expires_at");
+        }
+        let yaml = serde_yaml::to_string(&parsed)
+            .map_err(|e| format!("序列化 YAML 失败: {e}"))?;
+        config.atomic_write(&config_path, &yaml)?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

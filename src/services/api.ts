@@ -189,6 +189,14 @@ export function changePassword(username: string, oldPassword: string, newPasswor
   return invoke("change_password", { username, oldPassword, newPassword });
 }
 
+export function validateSession() {
+  return invoke("validate_session");
+}
+
+export function logoutUser() {
+  return invoke("logout_user");
+}
+
 // ── Config ──
 
 export function getConfig() {
