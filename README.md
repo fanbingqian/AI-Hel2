@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="标识.png" alt="AI-Hel2" width="160" />
+  <img src="assets/social-preview.png" alt="AI-Hel2" width="320" />
 </p>
 
 # AI-Hel2 —— 你的伴随式智能体
