@@ -80,10 +80,45 @@
 
 ## 开发
 
+### 环境准备
+
 ```bash
-npm install          # 安装依赖
-npm run tauri dev    # 开发模式
+git clone https://github.com/fanbingqian/AI-Hel2.git
+cd AI-Hel2
+npm install          # 安装前端依赖
+```
+
+### 获取 Agent 运行时
+
+Agent 源码已在 `src-tauri/hermes-agent/` 中，但嵌入式 Python 运行时未包含在仓库中（体积过大）。从 [Releases](https://github.com/fanbingqian/AI-Hel2/releases) 下载最新安装包，安装后将以下目录拷贝到源码对应位置：
+
+```
+<安装目录>/data/hermes-agent/python/  →  src-tauri/hermes-agent/python/
+<安装目录>/data/hermes-agent/bash/    →  src-tauri/hermes-agent/bash/
+```
+
+> 或从 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 官方仓库获取原始 Python 环境。
+
+### 启动开发
+
+```bash
+npm run tauri dev    # 开发模式（热重载）
 npm run tauri build  # 构建安装包
+```
+
+### 项目结构
+
+```
+├── src/                     # React 前端源码
+├── src-tauri/
+│   ├── src/                 # Rust 后端源码（Tauri 命令）
+│   ├── hermes-agent/        # Python Agent 源码（不含运行时）
+│   ├── icons/               # 应用图标
+│   ├── migrations/          # SQLite 数据库迁移
+│   └── Cargo.toml           # Rust 依赖
+├── docs/                    # 设计文档
+├── scripts/                 # 辅助脚本
+└── assets/                  # README 图片资源
 ```
 
 ## License
