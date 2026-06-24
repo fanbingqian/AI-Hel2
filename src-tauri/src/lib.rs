@@ -204,7 +204,7 @@ pub fn run() {
                 })
                 .build(app);
 
-            // Pill window (平刘海) — top-center floating bar
+            // Pill window (齐刘海) — top-center floating bar
             {
                 let pill = tauri::WebviewWindowBuilder::new(
                     app,
@@ -218,7 +218,7 @@ pub fn run() {
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .resizable(false)
-                .visible(true)
+                .visible(false)   // hide until positioned
                 .build();
 
                 if let Ok(pill) = pill {
@@ -229,6 +229,7 @@ pub fn run() {
                             tauri::PhysicalPosition { x, y: 38 },
                         ));
                     }
+                    let _ = pill.show();
                 }
 
             }
