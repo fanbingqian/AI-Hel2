@@ -505,9 +505,15 @@ pub async fn download_update(app: tauri::AppHandle, url: String) -> Result<Strin
     std::fs::write(&tmp, &buf).map_err(|e| format!("写入临时文件失败: {e}"))?;
     #[cfg(windows)]
     {
-        std::process::Command::new("powershell")
-            .args(["-Command", "Start-Process", "-FilePath", tmp.to_str().unwrap_or(""), "-Verb", "RunAs", "-Wait"])
-            .spawn().map_err(|e| format!("启动安装程序失败: {e}"))?;
+        let installer_path = tmp.to_str().unwrap_or("");
+        let status = std::process::Command::new(installer_path)
+            .arg("/S")
+            .spawn()
+            .and_then(|mut c| c.wait())
+            .map_err(|e| format!("启动安装程序失败: {e}"))?;
+        if !status.success() {
+            return Err(format!("安装程序退出码: {:?}", status.code()));
+        }
     }
     #[cfg(not(windows))]
     {
