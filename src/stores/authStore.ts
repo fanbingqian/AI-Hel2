@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { UserInfo } from "../types";
-import { getConfig, getCurrentUser, validateSession, logoutUser } from "../services/api";
+import { getConfig, getCurrentUser, validateSession, logoutUser, listEnvKeys } from "../services/api";
+import { useSettingsStore } from "./settingsStore";
 
 export type AuthStage = "splash" | "login" | "register" | "api_setup" | "done";
 
@@ -23,10 +24,17 @@ interface AuthState {
 
 async function isApiConfigured(): Promise<boolean> {
   try {
+    // Check model.api_key in config.yaml
     const config = await getConfig();
     const model = (config as any)?.model;
-    if (!model) return false;
-    return !!model.api_key;
+    if (model?.api_key) return true;
+
+    // Check .env for any configured provider key
+    // listEnvKeys returns [key: string, configured: boolean][]
+    const envKeys = await listEnvKeys() as [string, boolean][];
+    if (envKeys?.some(([, configured]) => configured)) return true;
+
+    return false;
   } catch {
     return false;
   }
@@ -52,6 +60,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const sessionUser = await validateSession() as any;
       if (sessionUser?.name) {
         set({ isFirstRun: false, user: sessionUser, loading: false });
+        useSettingsStore.getState().setUser(sessionUser);
         get().proceedAfterLogin();
         return;
       }
@@ -87,6 +96,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // ignore — token cleanup is best-effort
     }
+    useSettingsStore.getState().setUser(null);
     set({ user: null, stage: "login", isFirstRun: false });
   },
 
@@ -96,6 +106,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // ignore
     }
+    useSettingsStore.getState().setUser(null);
     set({ user: null, stage: "login", isFirstRun: false, error: null });
   },
 
