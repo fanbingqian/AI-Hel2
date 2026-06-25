@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useId } from "react";
 import Cherry from "cherry-markdown";
 import "cherry-markdown/dist/cherry-markdown.css";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import * as api from "../../services/api";
 import { readWikiFileBase64 } from "../../services/wiki";
@@ -57,6 +57,7 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<EditorMode>("edit&preview");
   const [theme, setThemeState] = useState<Theme>(getSystemTheme);
+  const [externalChange, setExternalChange] = useState(false);
   const contentRef = useRef("");
   const instanceId = useId().replace(/:/g, "");
 
@@ -73,28 +74,19 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     }
   }, []);
 
-  // Load file content when filePath changes
-  useEffect(() => {
-    if (!filePath) {
-      contentRef.current = "";
-      setError(null);
-      setLoading(false);
-      setDirty(false);
-      cherryRef.current?.setMarkdown("");
-      return;
-    }
-
+  // ── Reload file content into editor ──
+  const reloadFile = useCallback((currentPath: string) => {
     setLoading(true);
     setError(null);
     api
-      .readWikiFile(filePath)
+      .readWikiFile(currentPath)
       .then((data) => {
         contentRef.current = data;
         setLoading(false);
         setDirty(false);
+        setExternalChange(false);
         if (cherryRef.current) {
           cherryRef.current.setMarkdown(data);
-          // Cherry renders asynchronously — refresh after DOM settles
           setTimeout(() => refreshCodeMirror(), 50);
           setTimeout(() => refreshCodeMirror(), 200);
         }
@@ -104,7 +96,53 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
         contentRef.current = "";
         setLoading(false);
       });
-  }, [filePath, refreshCodeMirror]);
+  }, [refreshCodeMirror]);
+
+  // Load file content when filePath changes
+  useEffect(() => {
+    if (!filePath) {
+      contentRef.current = "";
+      setError(null);
+      setLoading(false);
+      setDirty(false);
+      setExternalChange(false);
+      cherryRef.current?.setMarkdown("");
+      return;
+    }
+    reloadFile(filePath);
+  }, [filePath, reloadFile]);
+
+  // ── Listen for external file changes (Agent edits, etc.) ──
+  useEffect(() => {
+    const unlisten = listen<{ path: string; change_type: string }>("wiki:files-changed", (event) => {
+      const changedPath = event.payload.path?.replace(/\\/g, "/");
+      const currentPath = filePath?.replace(/\\/g, "/");
+      if (!changedPath || !currentPath) return;
+      if (changedPath !== currentPath) return;
+
+      // Current file was modified externally
+      if (!dirty) {
+        // No unsaved changes — auto-reload silently
+        reloadFile(currentPath);
+        // Also refresh CodeMirror layout
+        setTimeout(() => refreshCodeMirror(), 150);
+      } else {
+        // User has unsaved changes — show conflict banner
+        setExternalChange(true);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [filePath, dirty, reloadFile, refreshCodeMirror]);
+
+  // ── Handle user choosing to reload / keep after external change ──
+  const handleReloadExternal = useCallback(() => {
+    if (filePath) reloadFile(filePath);
+    setTimeout(() => refreshCodeMirror(), 150);
+  }, [filePath, reloadFile, refreshCodeMirror]);
+
+  const handleKeepCurrent = useCallback(() => {
+    setExternalChange(false);
+  }, []);
 
   // Create Cherry instance once
   useEffect(() => {
@@ -399,6 +437,13 @@ export function CherryEditor({ filePath, onFileOpen, onSaved }: Props) {
     <div className={styles.root}>
       {error && <div className={styles.error}>{error}</div>}
       {loading && <div className={styles.loading}>加载中...</div>}
+      {externalChange && (
+        <div className={styles.externalChangeBanner}>
+          <span>文件被外部修改</span>
+          <button type="button" className={styles.externalChangeBtn} onClick={handleReloadExternal}>重新加载</button>
+          <button type="button" className={styles.externalChangeBtnSecondary} onClick={handleKeepCurrent}>保留当前</button>
+        </div>
+      )}
       <div
         ref={containerRef}
         id={`cherry-editor-${instanceId}`}

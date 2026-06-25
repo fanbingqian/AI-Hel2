@@ -148,11 +148,12 @@ export default function AiHelPage() {
           <button type="button" className={`${styles.docTab} ${docTab === "docs" ? styles.docTabActive : ""}`} onClick={() => setDocTab("docs")}>文档列表</button>
           <button type="button" className={`${styles.docTab} ${docTab === "entities" ? styles.docTabActive : ""}`} onClick={() => setDocTab("entities")}>实体列表</button>
         </div>
-        {docTab === "docs" ? (
+        <div style={{ display: docTab === "docs" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
           <DocTree onFileOpen={handleFileOpen} onCanvasOpen={handleCanvasOpen} onUploadClick={handleUploadClick} />
-        ) : (
+        </div>
+        <div style={{ display: docTab === "entities" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
           <EntityBrowser compact />
-        )}
+        </div>
       </div>
       {!panelCollapsed && <PanelResizer onResize={handleDocTreeResize} />}
 
